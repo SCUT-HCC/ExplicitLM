@@ -1,5 +1,5 @@
 # 集群实验状态文件 - exp_001
-# 生成时间: 2025-10-12T07:14:08Z
+# 生成时间: 2025-10-12T07:19:48Z
 
 # 实验配置
 export EXP_ID="exp_001"
@@ -7,7 +7,7 @@ export EXP_DESC="基线实验 knowledge_num=1M epochs=10"
 export TRAIN_ARGS="--epochs 10 --knowledge_num 1048576 --dim 512 --n_layers 8 --batch_size 1 --learning_rate 2e-4"
 
 # 版本信息
-export CODE_COMMIT="d9084ec975768144e389ba4fbb82b8eece48f5c1"
+export CODE_COMMIT="16a766b5411c1827381b852437839c9920116e67"
 export DATABASE_COMMIT="fd5f22ae9370753ebf323899d4970c496a45f4e5"
 export BENCHMARKS_COMMIT=""
 export EMBEDDINGS_COMMIT="N/A"
@@ -19,4 +19,4 @@ export PROJECT_ROOT="/home/pci/ExplicitLM"
 export CHECKPOINT_DIR="/home/pci/ExplicitLM/checkpoints/exp_001"
 export RECORD_FILE="/home/pci/ExplicitLM/experiments/records/exp_001.json"
 export META_FILE="/home/pci/ExplicitLM/.experiment_meta_exp_001"
-export TIMESTAMP="2025-10-12T07:14:08Z"
+export TIMESTAMP="2025-10-12T07:19:48Z"

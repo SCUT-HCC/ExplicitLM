@@ -2,10 +2,10 @@
   "experiment": {
     "id": "exp_001",
     "description": "基线实验 knowledge_num=1M epochs=10",
-    "timestamp": "2025-10-12T07:14:08Z"
+    "timestamp": "2025-10-12T07:19:48Z"
   },
   "versions": {
-    "code_commit": "d9084ec975768144e389ba4fbb82b8eece48f5c1",
+    "code_commit": "16a766b5411c1827381b852437839c9920116e67",
     "data": {
       "dataset_commit": "fd5f22ae9370753ebf323899d4970c496a45f4e5",
       "val_dataset_commit": "",
