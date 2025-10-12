@@ -22,7 +22,6 @@ uv.lock
 /data/benchmarks/*
 !/data/benchmarks/.gitkeep
 !/data/benchmarks/*.dvc
-
 # 模型权重（保留.dvc元文件）
 /checkpoints/*
 !/checkpoints/.gitkeep
