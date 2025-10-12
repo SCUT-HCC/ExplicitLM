@@ -7,7 +7,7 @@
 from accelerate import Accelerator
 
 
-def logger(msg: str, accelerator: Accelerator) -> None:
+def Logger(msg: str, accelerator: Accelerator = None) -> None:
     """
     打印日志信息（仅主进程输出）
 
@@ -15,5 +15,5 @@ def logger(msg: str, accelerator: Accelerator) -> None:
         msg: 日志消息内容
         accelerator: Accelerator实例，用于判断是否为主进程
     """
-    if accelerator.is_main_process:
+    if  accelerator is not None and accelerator.is_main_process:
         print(msg)

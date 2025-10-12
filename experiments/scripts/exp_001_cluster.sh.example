@@ -22,7 +22,7 @@ DATABASE_VERSION=""
 CACHE_VERSION=""
 
 # 训练参数
-TRAIN_ARGS="--epochs 10 --knowledge_num 1048576 --dim 512 --n_layers 8 --batch_size 48 --learning_rate 2e-4"
+TRAIN_ARGS="--epochs 10 --knowledge_num 1048576 --dim 512 --n_layers 8 --batch_size 1 --learning_rate 2e-4"
 
 # ============================================================================
 # 执行阶段选择

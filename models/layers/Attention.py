@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from models.configs import LMConfig
-from models.core.pos_cis import apply_rotary_emb
+from models.layers.pos_cis import apply_rotary_emb
 
 
 def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:

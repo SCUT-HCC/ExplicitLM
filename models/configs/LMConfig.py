@@ -89,7 +89,11 @@ class LMConfig(PretrainedConfig):
             epochs: int = 3,  # 训练轮数
             learning_rate: float = 2e-4,  # 学习率
             out_dir: str = "out",  # 输出目录
-            **kwargs,
+            ####################################################
+            # log相关配置
+            ####################################################
+            log_interval:int = 10,
+            **kwargs
     ):
         ####################################################
         # 基本模型架构参数
@@ -173,4 +177,8 @@ class LMConfig(PretrainedConfig):
         self.epochs = epochs
         self.learning_rate = learning_rate
         self.out_dir = out_dir
+        ####################################################
+        # Log相关配置
+        ####################################################
+        self.log_interval = log_interval
         super().__init__(**kwargs)

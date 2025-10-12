@@ -42,7 +42,7 @@ class ModelTypeConfig:
             "database_attribute": "knowledge_dataset.knowledge_dataset"
         },
         "model_memory": {
-            "module_path": "model.model_memory",
+            "module_path": "models.core.ExplicitLM",
             "class_name": "MiniMindLM",
             "requires_weight_init": True,
             "database_attribute": "memory_bank",
@@ -714,13 +714,13 @@ def init_model(args) -> Tuple[nn.Module, AutoTokenizer]:
 
     # 获取模型类型配置
     type_config = ModelTypeConfig.get_config(model_type)
-
+    print(type_config)
     # 动态导入模型类
     module = __import__(type_config["module_path"], fromlist=[type_config["class_name"]])
     MiniMindLM = getattr(module, type_config["class_name"])
 
     # 加载tokenizer
-    tokenizer = AutoTokenizer.from_pretrained('./model/minimind_tokenizer')
+    tokenizer = AutoTokenizer.from_pretrained('./models/minimind_tokenizer')
 
     # 从args创建LMConfig实例（模型构造函数仍需要LMConfig）
     from models.configs.LMConfig import LMConfig

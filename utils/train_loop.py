@@ -15,7 +15,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from accelerate import Accelerator
 
-from utils.logger import logger
+from utils.logger import Logger
 from utils.train_utils import validate_model, format_time
 
 try:
@@ -79,7 +79,7 @@ def train_epoch(
         if step == 0 and args.embeddings_epoch == epoch:
             unwrapped_model = accelerator.unwrap_model(model)
             unwrapped_model.freeze_embedding = True
-            logger(f"设置freeze_embedding=True (epoch {epoch}, step {step})", accelerator)
+            Logger(f"设置freeze_embedding=True (epoch {epoch}, step {step})", accelerator)
 
         res = model(X, step=step)
 
@@ -135,7 +135,7 @@ def train_epoch(
                 if (step + 1) % args.log_interval == 0 and accelerator.is_main_process:
                     if ema_update_stats.get('ema_update_applied', False):
                         total_memories = args.knowledge_num
-                        logger(
+                        Logger(
                             f"EMA更新 - Step: {ema_update_stats['ema_step']}, "
                             f"更新记忆数: {ema_update_stats['updated_memories']}/{total_memories} "
                             f"({ema_update_stats['update_ratio']:.4f}), "
@@ -172,9 +172,9 @@ def train_epoch(
             if val_loader is not None:
                 try:
                     val_loss = validate_model(model, val_loader, loss_fct, accelerator)
-                    logger(f"验证损失: {val_loss:.4f}", accelerator)
+                    Logger(f"验证损失: {val_loss:.4f}", accelerator)
                 except Exception as e:
-                    logger(f"验证评估失败: {e}", accelerator)
+                    Logger(f"验证评估失败: {e}", accelerator)
                     val_loss = None
 
             # 获取记忆库更新统计（如果模型支持）
@@ -184,7 +184,7 @@ def train_epoch(
                 try:
                     memory_update_stats = unwrapped_model.get_memory_update_stats()
                 except Exception as e:
-                    logger(f"获取记忆更新统计失败: {e}", accelerator)
+                    Logger(f"获取记忆更新统计失败: {e}", accelerator)
 
             # 获取余弦相似度统计
             avg_selected_similarity = 0.0
@@ -222,7 +222,7 @@ def train_epoch(
             log_dict.update(memory_update_stats)
 
             # 控制台输出
-            logger(
+            Logger(
                 f"Epoch {epoch+1}/{args.epochs}, Step {step+1}/{total_steps_in_epoch}, "
                 f"CE: {log_dict['train/loss_ce']:.4f}, "
                 f"Sim: {log_dict['train/loss_similarity']:.4f}, "
@@ -253,4 +253,4 @@ def train_epoch(
 
                 # 保存模型参数
                 accelerator.save(unwrapped_model.state_dict(), ckp)
-                logger(f"模型已保存至 {ckp}", accelerator)
+                Logger(f"模型已保存至 {ckp}", accelerator)

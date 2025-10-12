@@ -7,7 +7,6 @@
 #   - EXP_ID: 实验ID
 #   - EXP_DESC: 实验描述
 #   - DATASET_VERSION: 训练数据集版本（Git commit hash，可选）
-#   - VAL_DATASET_VERSION: 验证数据集版本（Git commit hash，可选）
 #   - EMBEDDING_VERSION: 预训练嵌入版本（可选）
 #   - DATABASE_VERSION: 知识库初始化版本（可选）
 #   - CACHE_VERSION: 缓存数据版本（可选）
@@ -77,7 +76,6 @@ log_info "========================================="
 log_info "实验ID: $EXP_ID"
 log_info "实验描述: $EXP_DESC"
 log_info "训练数据集版本: ${DATASET_VERSION:-当前版本}"
-log_info "验证数据集版本: ${VAL_DATASET_VERSION:-当前版本}"
 log_info "训练参数: $TRAIN_ARGS"
 log_info "========================================="
 
@@ -185,21 +183,19 @@ sync_data() {
         fi
     }
 
-    # 依次同步各数据集（必需数据集）
+    # 同步训练数据集
     sync_dataset "database" "$DATASET_VERSION"         # data/database.dvc (训练数据集)
-    sync_dataset "benchmarks" "$VAL_DATASET_VERSION"   # data/benchmarks.dvc (验证数据集)
 
     # 可选数据集（仅在项目使用且指定了版本时同步）
     [ -n "$EMBEDDING_VERSION" ] && sync_dataset "embeddings" "$EMBEDDING_VERSION"      # data/embeddings.dvc (如果存在)
     [ -n "$DATABASE_VERSION" ] && sync_dataset "database_init" "$DATABASE_VERSION"    # data/database_init.dvc (如果存在)
     [ -n "$CACHE_VERSION" ] && sync_dataset "cache" "$CACHE_VERSION"                   # cache.dvc (如果存在)
 
-    log_success "所有数据集同步完成"
+    log_success "数据集同步完成"
     log_info "  - Database (训练数据): ${DATABASE_COMMIT:0:8}"
-    log_info "  - Benchmarks (验证数据): ${BENCHMARKS_COMMIT:0:8}"
-    [ -n "$EMBEDDING_VERSION" ] && log_info "  - Embeddings (预训练权重): ${EMBEDDINGS_COMMIT:0:8}"
-    [ -n "$DATABASE_VERSION" ] && log_info "  - Database Init (知识库): ${DATABASE_INIT_COMMIT:0:8}"
-    [ -n "$CACHE_VERSION" ] && log_info "  - Cache: ${CACHE_COMMIT:0:8}"
+    # [ -n "$EMBEDDING_VERSION" ] && log_info "  - Embeddings (预训练权重): ${EMBEDDINGS_COMMIT:0:8}"
+    # [ -n "$DATABASE_VERSION" ] && log_info "  - Database Init (知识库): ${DATABASE_INIT_COMMIT:0:8}"
+    # [ -n "$CACHE_VERSION" ] && log_info "  - Cache: ${CACHE_COMMIT:0:8}"
 }
 
 ################################################################################
@@ -371,8 +367,6 @@ print(json.dumps(params, indent=2))
     "data": {
       "dataset_commit": "$DATABASE_COMMIT",
       "dataset_commit_short": "${DATABASE_COMMIT:0:8}",
-      "val_dataset_commit": "$BENCHMARKS_COMMIT",
-      "val_dataset_commit_short": "${BENCHMARKS_COMMIT:0:8}",
       "embedding_commit": "${EMBEDDINGS_COMMIT:-N/A}",
       "embedding_commit_short": "${EMBEDDINGS_COMMIT:0:8}",
       "database_init_commit": "${DATABASE_INIT_COMMIT:-N/A}",
@@ -397,11 +391,10 @@ print(json.dumps(params, indent=2))
   "reproduction": {
     "code_checkout": "git checkout $CODE_COMMIT",
     "data_checkout_steps": [
-      "git checkout $DATABASE_COMMIT && dvc checkout data/database.dvc && git checkout -",
-      "git checkout $BENCHMARKS_COMMIT && dvc checkout data/benchmarks.dvc && git checkout -"
+      "git checkout $DATABASE_COMMIT && dvc checkout data/database.dvc && git checkout -"
     ],
     "checkpoint_pull": "dvc pull ${CHECKPOINT_DVC}",
-    "full_command": "# 1. 恢复代码版本\\ngit checkout $CODE_COMMIT\\n\\n# 2. 恢复各数据集版本\\ngit checkout $DATABASE_COMMIT && dvc checkout data/database.dvc && git checkout -\\ngit checkout $BENCHMARKS_COMMIT && dvc checkout data/benchmarks.dvc && git checkout -\\n\\n# 3. 运行训练\\naccelerate launch 1_pretrain.py --out_dir $CHECKPOINT_DIR $TRAIN_ARGS"
+    "full_command": "# 1. 恢复代码版本\\ngit checkout $CODE_COMMIT\\n\\n# 2. 恢复数据集版本\\ngit checkout $DATABASE_COMMIT && dvc checkout data/database.dvc && git checkout -\\n\\n# 3. 运行训练\\naccelerate launch 1_pretrain.py --out_dir $CHECKPOINT_DIR $TRAIN_ARGS"
   }
 }
 EOF
@@ -466,8 +459,7 @@ print_summary() {
     log_info "💾 Checkpoint: $CHECKPOINT_DIR"
     log_info "🏷️  代码版本: ${CODE_COMMIT:0:8}"
     log_info "📊 训练数据集版本: ${DATABASE_COMMIT:0:8}"
-    log_info "📊 验证数据集版本: ${BENCHMARKS_COMMIT:0:8}"
-    log_info "🔐 权重哈希: ${CHECKPOINT_HASH:0:8}"
+    log_info " 权重哈希: ${CHECKPOINT_HASH:0:8}"
     echo ""
     log_info "复现命令（详见记录文件的reproduction字段）:"
     echo "  1. 恢复代码: git checkout $CODE_COMMIT"

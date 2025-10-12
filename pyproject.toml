@@ -5,6 +5,12 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "accelerate>=1.10.1",
     "boto3>=1.40.45",
+    "deepspeed>=0.18.0",
     "dvc[s3]>=3.63.0",
+    "mpi4py>=4.1.1",
+    "swanlab>=0.6.11",
+    "torch>=2.8.0",
+    "transformers>=4.57.0",
 ]

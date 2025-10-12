@@ -20,7 +20,7 @@ from transformers.modeling_outputs import CausalLMOutputWithPast
 from models.configs.LMConfig import LMConfig
 from models.core.ExplicitLMBlock import ExplicitLMBlock
 from models.layers.RMSNorm import RMSNorm
-from models.layers.Attention import precompute_pos_cis
+from models.layers.pos_cis import precompute_pos_cis
 
 
 class MiniMindLM(PreTrainedModel):

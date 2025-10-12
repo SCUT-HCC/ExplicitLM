@@ -1,5 +1,5 @@
 """
-MiniMindBlock: 基于记忆增强的Transformer块
+ExplicitLMBlock: 基于记忆增强的Transformer块
 
 该模块实现了一个替代传统FFN的记忆增强架构，通过以下机制提升模型性能：
 - 自注意力机制处理序列上下文
@@ -18,11 +18,11 @@ import torch.nn.functional as F
 from models.configs.LMConfig import LMConfig
 from models.layers.Attention import Attention
 from models.layers.RMSNorm import RMSNorm
-from models.layers.MemoryGate import MemoryGate
-from models.layers.GatedMemoryFusion import GatedMemoryFusion
+from models.memory_bank.MemoryGate import MemoryGate
+from models.memory_bank.GatedMemoryFusion import GatedMemoryFusion
 
 
-class MiniMindBlock(nn.Module):
+class ExplicitLMBlock(nn.Module):
     """
     Transformer块，使用基于记忆的交叉注意力机制替代传统FFN
 
@@ -35,7 +35,7 @@ class MiniMindBlock(nn.Module):
 
     def __init__(self, layer_id: int, config: LMConfig) -> None:
         """
-        初始化MiniMindBlock
+        初始化ExplicitLMBlock
 
         Args:
             layer_id: 当前层的ID索引
