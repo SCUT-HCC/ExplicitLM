@@ -37,16 +37,17 @@ ExplicitLM/                          # 项目根目录
 │   ├── pretrain_datasets.py        # 数据加载器（支持训练集和验证集）
 │   ├── train_loop.py               # 训练循环实现
 │   ├── train_utils.py              # 训练辅助工具
-│   └── logger.py                   # 分布式日志工具
+│   └── Logger.py                   # 分布式日志工具
 ├── data/                            # 数据管理（DVC追踪）
 │   ├── database/                    # 预训练数据集
-│   │   ├── merged_pretrain.jsonl   # 训练数据
-│   │   └── *.dvc                   # DVC版本追踪文件
+│   │   └── merged_pretrain.jsonl   # 训练数据（10.77 GB）
+│   ├── database.dvc                 # database目录DVC追踪文件
 │   ├── benchmarks/                  # 验证数据集
-│   │   ├── eval_data.json          # 评估数据
-│   │   └── *.dvc                   # DVC版本追踪文件
+│   │   └── eval_data.json          # 评估数据（28 KB）
+│   ├── benchmarks.dvc               # benchmarks目录DVC追踪文件
 │   ├── knowledge_base/              # 显式知识库数据
-│   ├── processed/                   # 预处理后的数据
+│   │   └── sentence_trex_data.json # T-REx知识库（446 MB）
+│   ├── knowledge_base.dvc           # knowledge_base目录DVC追踪文件
 │   └── raw/                         # 原始数据
 ├── experiments/                     # 实验管理系统
 │   ├── scripts/                     # 实验运行脚本
@@ -61,6 +62,10 @@ ExplicitLM/                          # 项目根目录
 │       ├── README.md                # 实验记录系统说明文档
 │       ├── exp_001.json             # 实验001元数据记录
 │       └── ...                      # 其他实验记录
+├── cache/                           # 缓存数据（DVC追踪）
+│   ├── knowledge_cache.pt           # 知识缓存（128 MB）
+│   └── cluster_tokens_single_mapping.json  # 聚类token映射（338 MB）
+├── cache.dvc                        # cache目录DVC追踪文件
 ├── checkpoints/                     # 模型检查点（DVC追踪）
 │   ├── exp_001/                     # 实验001的模型权重
 │   ├── exp_001.dvc                  # DVC版本追踪文件
@@ -70,7 +75,7 @@ ExplicitLM/                          # 项目根目录
 │   └── ...
 ├── docs/                            # 项目文档
 │   ├── experiment_workflow.md       # 实验运行指南（DVC、训练流程）
-│   ├── dvc_implementation_plan.md   # DVC实现规划文档
+│   ├── dvc_guide.md                 # DVC数据版本管理指南（常用指令、版本记录）
 │   └── uv.md                        # uv包管理器使用指南
 ├── scripts/                         # 实用脚本
 │   ├── data_processing/             # 数据处理脚本
@@ -206,7 +211,7 @@ ExplicitLM采用十阶段的训练流程，完整实现在`1_pretrain.py`中。�
 
 ## 实验管理系统
 
-ExplicitLM集成了完整的实验管理系统，基于Git（代码版本）、DVC（数据和模型权重版本）和SwanLab（指标可视化）三者协同。系统支持单机模式和集群模式，提供细粒度的数据版本控制和自动化的实验记录生成。详细的使用指南请参阅[实验运行指南](docs/experiment_workflow.md)。
+ExplicitLM集成了完整的实验管理系统，基于Git（代码版本）、DVC（数据和模型权重版本）和SwanLab（指标可视化）三者协同，并通过CI/CD实现标准化的持续交付流程。系统支持单机模式和集群模式，提供细粒度的数据版本控制和自动化的实验记录生成，所有实验版本的结果可通过GitHub进行统一管理和追溯。详细的使用指南请参阅[实验运行指南](docs/experiment_workflow.md)。
 
 ### 核心原则
 
@@ -263,13 +268,13 @@ ExplicitLM支持为每个数据集独立指定版本，包括训练数据集（`
 - **运行环境**：Python版本、CUDA版本、GPU数量
 - **复现指令**：Git代码恢复命令、DVC数据恢复命令、完整训练命令
 
-通过实验记录，可以精确复现任何历史实验。系统提供了便捷的查询工具，支持按参数、时间、数据版本等条件检索实验。
+通过实验记录，可以精确复现任何历史实验。系统提供了便捷的查询工具，支持按参数、时间、数据版本等条件检索实验。所有实验版本的结果通过GitHub进行集中管理，每次实验的JSON记录、模型权重DVC追踪文件和训练日志都会提交到代码仓库，形成完整的实验历史轨迹，便于团队协作和长期追溯。
 
 ## 工具选择
 
 **包管理器**：项目使用[uv](https://github.com/astral-sh/uv)作为Python包管理器。uv是一个现代化的、极快的包管理工具，比传统的pip和conda快10-100倍。项目配置在`pyproject.toml`中定义，通过`uv sync`即可安装所有依赖。详细的uv使用指南请参阅[uv使用指南](docs/uv.md)。
 
-**版本控制**：代码使用Git进行版本控制，数据和模型权重使用DVC（Data Version Control）。DVC采用与Git类似的工作流程，但专门针对大文件进行了优化。项目配置MinIO作为DVC的远程存储后端，支持团队协作和数据共享。
+**版本控制**：代码使用Git进行版本控制，数据和模型权重使用DVC（Data Version Control）。DVC采用与Git类似的工作流程，但专门针对大文件进行了优化。项目配置MinIO作为DVC的远程存储后端，支持团队协作和数据共享。所有数据集的版本信息（包括版本标识、创建日期、数据大小等）请参阅[DVC数据版本管理指南 - 数据集版本记录](docs/dvc_guide.md#二数据集版本记录)。
 
 **实验追踪**：使用SwanLab进行实验可视化和管理。SwanLab提供了丰富的指标记录、可视化、对比分析功能，支持在线和离线模式。训练过程中的所有指标（损失、学习率、验证准确率等）会自动上传到SwanLab平台。
 
@@ -331,9 +336,44 @@ rsync -avz compute-node:/path/to/ExplicitLM/checkpoints/exp_001/ ./checkpoints/e
 
 ## 主要文档
 
+- [DVC数据版本管理指南](docs/dvc_guide.md)：DVC常用指令、数据集版本记录、版本切换方法
 - [实验运行指南](docs/experiment_workflow.md)：详细介绍DVC数据管理、实验训练流程（单机/集群）、实验记录系统
 - [uv使用指南](docs/uv.md)：uv包管理器的使用方法和最佳实践
 - [实验记录说明](experiments/records/README.md)：实验记录文件的结构、查询和复现方法
+
+## 项目发展路线图
+
+ExplicitLM的开发按照三个阶段递进式推进，每个阶段聚焦不同的技术重点和研究目标：
+
+### 第一阶段：重构原始项目 & 构建标准运行流
+
+本阶段的核心目标是建立规范化的项目基础设施和完善基线模型实验。主要工作包括：
+
+- **代码重构与规范化**：整理原始代码结构，统一编码规范，建立完整的配置管理系统
+- **SFT训练流程集成**：在现有预训练流程基础上，添加监督微调（Supervised Fine-Tuning）模块，支持下游任务适配
+- **实验补充与验证**：
+  - 补充缺失的评估指标（如困惑度、F1分数、知识检索准确率等）
+  - 扩展模型规模实验（从小规模到中等规模的模型对比）
+  - 实现可视化工具（记忆库使用热力图、注意力分布、知识检索路径等）
+- **基准对比实验**：在通用数据集（如WikiText、LAMBADA、TriviaQA等）上与主流模型进行性能对比，验证ExplicitLM的有效性
+- **CI/CD流程建设**：建立自动化测试、代码检查和实验追踪的持续集成/持续交付流程
+
+### 第二阶段：更新模型架构 & 实现三元组提取与更新
+
+本阶段聚焦于知识管理机制的深化，实现动态知识图谱的构建与更新：
+
+- **知识三元组提取**：开发基于神经网络的三元组抽取模块，从文本中自动识别实体关系
+- **记忆库动态更新**：将提取的三元组结构化存储到显式记忆库中，以支持知识更新
+
+### 第三阶段：优化技术细节
+
+本阶段针对系统的各个维度进行深度优化和应用拓展：
+
+- **知识提取优化**：提升三元组提取的精度和效率，支持细粒度的知识颗粒度控制
+- **应用场景探索**：将ExplicitLM应用于问答系统、对话生成、知识推理等实际任务
+- **强化学习集成**：引入人类反馈的强化学习（RLHF），优化知识检索和生成策略
+- **持续学习机制**：实现终身学习能力，支持模型在部署后持续从新数据中学习
+- **效率与可扩展性**：优化计算效率和内存占用，支持更大规模的记忆库和更长的上下文
 
 ## 项目定位
 

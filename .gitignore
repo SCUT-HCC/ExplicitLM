@@ -58,3 +58,4 @@ wandb/
 # .env
 # secrets.yaml
 **/CLAUDE.md
+/cache

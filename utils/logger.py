@@ -7,7 +7,7 @@
 from accelerate import Accelerator
 
 
-def Logger(msg: str, accelerator: Accelerator = None) -> None:
+def logger(msg: str, accelerator: Accelerator) -> None:
     """
     打印日志信息（仅主进程输出）
 
