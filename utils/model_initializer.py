@@ -16,7 +16,7 @@ import torch.nn as nn
 from transformers import AutoTokenizer
 
 from models.configs.LMConfig import LMConfig
-from utils.Logger import Logger
+from utils.logger import Logger
 
 
 class ModelTypeConfig:
@@ -720,7 +720,7 @@ def init_model(args) -> Tuple[nn.Module, AutoTokenizer]:
     MiniMindLM = getattr(module, type_config["class_name"])
 
     # 加载tokenizer
-    tokenizer = AutoTokenizer.from_pretrained('./model/minimind_tokenizer')
+    tokenizer = AutoTokenizer.from_pretrained('./models/minimind_tokenizer')
 
     # 从args创建LMConfig实例（模型构造函数仍需要LMConfig）
     from models.configs.LMConfig import LMConfig

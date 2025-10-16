@@ -2,32 +2,29 @@
   "experiment": {
     "id": "exp_001",
     "description": "基线实验 knowledge_num=1M epochs=10",
-    "timestamp": "2025-10-12T07:14:08Z",
-    "mode": "cluster",
-    "script": "cluster_experiment.sh",
-    "command": "accelerate launch 1_pretrain.py --out_dir /home/pci/ExplicitLM/checkpoints/exp_001 --epochs 10 --knowledge_num 1048576 --dim 512 --n_layers 8 --batch_size 1 --learning_rate 2e-4"
+    "timestamp": "2025-10-16T11:57:02Z",
+    "script": "run_experiment.sh",
+    "command": "accelerate launch 1_pretrain.py --out_dir /home/pci/ExplicitLM/checkpoints/exp_001 --epochs 1 --knowledge_num 1048576 --dim 512 --n_layers 8 --batch_size 1 --learning_rate 2e-4"
   },
   "versions": {
-    "code_commit": "d9084ec975768144e389ba4fbb82b8eece48f5c1",
-    "code_commit_short": "d9084ec9",
+    "code_commit": "c4775a7702ae4fb34ffc8563728d20fc64a46d88",
+    "code_commit_short": "c4775a77",
     "data": {
-      "dataset_commit": "fd5f22ae9370753ebf323899d4970c496a45f4e5",
-      "dataset_commit_short": "fd5f22ae",
-      "val_dataset_commit": "",
-      "val_dataset_commit_short": "",
+      "dataset_commit": "28065662dcc2fbccfb47ada4147452adeb00d905",
+      "dataset_commit_short": "28065662",
       "embedding_commit": "N/A",
-      "embedding_commit_short": "N/A",
+      "embedding_commit_short": "",
       "database_init_commit": "N/A",
-      "database_init_commit_short": "N/A",
+      "database_init_commit_short": "",
       "cache_commit": "N/A",
-      "cache_commit_short": "N/A"
+      "cache_commit_short": ""
     },
     "checkpoint_dvc": "/home/pci/ExplicitLM/checkpoints/exp_001.dvc",
     "checkpoint_hash": "md5:",
     "checkpoint_hash_short": "md5:"
   },
   "hyperparameters": {
-  "epochs": 10,
+  "epochs": 1,
   "knowledge_num": 1048576,
   "dim": 512,
   "n_layers": 8,
@@ -44,12 +41,11 @@
     "num_gpus": 1
   },
   "reproduction": {
-    "code_checkout": "git checkout d9084ec975768144e389ba4fbb82b8eece48f5c1",
+    "code_checkout": "git checkout c4775a7702ae4fb34ffc8563728d20fc64a46d88",
     "data_checkout_steps": [
-      "git checkout fd5f22ae9370753ebf323899d4970c496a45f4e5 && dvc checkout data/database.dvc && git checkout -",
-      "git checkout  && dvc checkout data/benchmarks.dvc && git checkout -"
+      "git checkout 28065662dcc2fbccfb47ada4147452adeb00d905 && dvc checkout data/database.dvc && git checkout -"
     ],
     "checkpoint_pull": "dvc pull /home/pci/ExplicitLM/checkpoints/exp_001.dvc",
-    "full_command": "# 1. 恢复代码版本\ngit checkout d9084ec975768144e389ba4fbb82b8eece48f5c1\n\n# 2. 恢复各数据集版本\ngit checkout fd5f22ae9370753ebf323899d4970c496a45f4e5 && dvc checkout data/database.dvc && git checkout -\ngit checkout  && dvc checkout data/benchmarks.dvc && git checkout -\n\n# 3. 运行训练\naccelerate launch 1_pretrain.py --out_dir /home/pci/ExplicitLM/checkpoints/exp_001 --epochs 10 --knowledge_num 1048576 --dim 512 --n_layers 8 --batch_size 1 --learning_rate 2e-4"
+    "full_command": "# 1. 恢复代码版本\ngit checkout c4775a7702ae4fb34ffc8563728d20fc64a46d88\n\n# 2. 恢复数据集版本\ngit checkout 28065662dcc2fbccfb47ada4147452adeb00d905 && dvc checkout data/database.dvc && git checkout -\n\n# 3. 运行训练\naccelerate launch 1_pretrain.py --out_dir /home/pci/ExplicitLM/checkpoints/exp_001 --epochs 1 --knowledge_num 1048576 --dim 512 --n_layers 8 --batch_size 1 --learning_rate 2e-4"
   }
 }

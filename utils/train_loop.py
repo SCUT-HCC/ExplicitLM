@@ -15,7 +15,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from accelerate import Accelerator
 
-from utils.logger import logger
+from utils.logger import Logger
 from utils.train_utils import validate_model, format_time
 
 try:
