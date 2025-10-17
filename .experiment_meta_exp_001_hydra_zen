@@ -1,0 +1,19 @@
+{
+  "experiment": {
+    "id": "exp_001_hydra_zen",
+    "description": "基线实验 Hydra-Zen配置版 knowledge_num=1M epochs=10",
+    "timestamp": "2025-10-17T16:34:55Z",
+    "script": "run_experiment_hydra_zen.sh"
+  },
+  "versions": {
+    "code_commit": "878d7d69d83ebafb5f508560dc41fa5e186adb11",
+    "data": {
+      "dataset_commit": "28065662dcc2fbccfb47ada4147452adeb00d905",
+      "val_dataset_commit": "",
+      "embedding_commit": "N/A",
+      "database_init_commit": "N/A",
+      "cache_commit": "N/A"
+    }
+  },
+  "command": "python 1_pretrain.py training.epochs=1 model.knowledge_num=1048576 model.dim=512 model.n_layers=8 training.batch_size=1 training.learning_rate=2e-4"
+}

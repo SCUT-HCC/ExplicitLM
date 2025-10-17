@@ -10,6 +10,7 @@ from accelerate.utils import set_seed
 import torch
 import torch.optim as optim
 from transformers import get_cosine_schedule_with_warmup
+import argparse
 from hydra_zen import launch, zen, instantiate
 from config import store,_main_cfg_func          # 触发配置注册
 from utils.logger import Logger
@@ -56,6 +57,8 @@ def main(cfg):
     swanlab_run = None
     if l_cfg.use_swanlab and accelerator.is_main_process and swanlab is not None:
         mode = "cloud" if l_cfg.swanlab_online else "local"
+        Logger(f"SwanLab 模式：{mode}", accelerator)
+        Logger(f"SwanLab 运行中...", accelerator)
         swanlab_run = swanlab.init(
             project=l_cfg.swanlab_project,
             experiment_name=f"MiniMind-Pretrain-{tr_cfg.epochs}e-{tr_cfg.batch_size}b",
@@ -105,7 +108,6 @@ def main(cfg):
         proj_root / d_cfg.val_dataset_path, tokenizer,
         tr_cfg.batch_size, m_cfg.max_seq_len,num_samples=200
     )
-    Logger(proj_root / d_cfg.val_dataset_path, accelerator)
     steps_per_epoch = len(train_loader) // tr_cfg.accumulation_steps
     scheduler = get_cosine_schedule_with_warmup(
         optimizer,
@@ -119,6 +121,8 @@ def main(cfg):
     model, optimizer, scheduler, train_loader, val_loader = accelerator.prepare(
         model, optimizer, scheduler, train_loader, val_loader
     )
+    Logger(instantiate(cfg), accelerator)
+
     # Logger(instantiate(cfg).model,accelerator)
     # ------------------------------------------------------------------
     # 6. 训练循环
@@ -144,8 +148,38 @@ def main(cfg):
     # 7. 收尾
     # ------------------------------------------------------------------
     if accelerator.is_main_process and swanlab_run:
-        swanlab_run.finish()
+        # 获取SwanLab实验URL
+        if l_cfg.swanlab_online:                       # 云版
+            exp_url = str(swanlab_run.public.cloud.experiment_url)
+        else:                                          # 本地版
+            exp_url = 'local-mode'                     # 或者 swanlab_run.path
+
+        # 写入临时文件供脚本读取
+        with open('.swanlab_url', 'w') as f:
+            f.write(exp_url)
+
+        Logger(f"SwanLab URL已保存: {exp_url}", accelerator)
+
+    #########################################################
+    # 第十阶段：关闭SwanLab
+    #########################################################
+
+    if l_cfg.use_swanlab and accelerator.is_main_process:
+        if swanlab_run is not None:
+            swanlab_run.finish()
+            Logger("SwanLab运行已结束", accelerator)
+
+    Logger("训练完成！", accelerator)
 
 
 if __name__ == "__main__":
-    launch(_main_cfg_func,main)
+    import sys
+    # Extract command line arguments for config overrides, skipping script name
+    # We accept key=value arguments directly from command line
+    overrides = []
+    for arg in sys.argv[1:]:
+        if '=' in arg and not arg.startswith('--'):
+            overrides.append(arg)
+    
+    # Launch with command line overrides
+    launch(_main_cfg_func, main, overrides=overrides)
