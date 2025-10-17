@@ -62,8 +62,8 @@ def train_epoch(
     loss_fct = nn.CrossEntropyLoss(reduction='none')
     epoch_start_time = time.time()
     total_steps_in_epoch = len(train_loader)
-    total_training_steps = args.epochs * total_steps_in_epoch
-    moe_path = '_moe' if args.use_moe else ''
+    total_training_steps = args.training.epochs * total_steps_in_epoch
+    moe_path = '_moe' if args.model.use_moe else ''
     best_loss = float('inf')
 
     # 记录初始状态
@@ -76,7 +76,7 @@ def train_epoch(
 
         # 前向传播（DeepSpeed自动处理bf16混合精度）
         # 第一个epoch的embedding冻结处理
-        if step == 0 and args.embeddings_epoch == epoch:
+        if step == 0 and args.training.embeddings_epoch == epoch:
             unwrapped_model = accelerator.unwrap_model(model)
             unwrapped_model.freeze_embedding = True
             Logger(f"设置freeze_embedding=True (epoch {epoch}, step {step})", accelerator)
@@ -116,7 +116,7 @@ def train_epoch(
             similarity_coef * similarity_loss +
             diversity_coef * diversity_loss
         )
-        loss = total_loss / args.accumulation_steps
+        loss = total_loss / args.training.accumulation_steps
 
         # 反向传播
         accelerator.backward(loss)
@@ -132,9 +132,9 @@ def train_epoch(
                 ema_update_stats = unwrapped_model.apply_ema_update(res.ema_stats)
 
                 # 记录EMA更新统计信息
-                if (step + 1) % args.log_interval == 0 and accelerator.is_main_process:
+                if (step + 1) % args.logging.log_interval == 0 and accelerator.is_main_process:
                     if ema_update_stats.get('ema_update_applied', False):
-                        total_memories = args.knowledge_num
+                        total_memories = args.model.knowledge_num
                         Logger(
                             f"EMA更新 - Step: {ema_update_stats['ema_step']}, "
                             f"更新记忆数: {ema_update_stats['updated_memories']}/{total_memories} "
@@ -144,7 +144,7 @@ def train_epoch(
                         )
 
         # 验证评估和日志记录（仅主进程）
-        if (step + 1) % args.log_interval == 0 and accelerator.is_main_process:
+        if (step + 1) % args.logging.log_interval == 0 and accelerator.is_main_process:
             current_time = time.time()
 
             # 计算当前学习率
@@ -163,12 +163,13 @@ def train_epoch(
 
             # 计算训练速度
             interval_elapsed_time = current_time - last_log_time
-            tokens_processed_interval = args.log_interval * args.batch_size * args.max_seq_len
+            tokens_processed_interval = args.logging.log_interval * args.training.batch_size * args.model.max_seq_len
             tokens_per_sec = tokens_processed_interval / interval_elapsed_time if interval_elapsed_time > 0 else 0
             last_log_time = current_time
 
             # 执行验证评估
             val_loss = None
+            Logger(str(val_loader == None),accelerator)
             if val_loader is not None:
                 try:
                     val_loss = validate_model(model, val_loader, loss_fct, accelerator)
@@ -223,7 +224,7 @@ def train_epoch(
 
             # 控制台输出
             Logger(
-                f"Epoch {epoch+1}/{args.epochs}, Step {step+1}/{total_steps_in_epoch}, "
+                f"Epoch {epoch+1}/{args.training.epochs}, Step {step+1}/{total_steps_in_epoch}, "
                 f"CE: {log_dict['train/loss_ce']:.4f}, "
                 f"Sim: {log_dict['train/loss_similarity']:.4f}, "
                 f"Div: {log_dict['train/loss_diversity']:.4f}, "
@@ -238,15 +239,15 @@ def train_epoch(
             )
 
             # SwanLab日志记录
-            if args.use_swanlab and swanlab_run:
+            if args.logging.use_swanlab and swanlab_run:
                 swanlab_run.log(log_dict)
 
         # 模型保存（仅主进程）
         if accelerator.is_main_process:
-            loss_total = loss.item() * args.accumulation_steps
+            loss_total = loss.item() * args.training.accumulation_steps
             if best_loss > loss_total:
                 best_loss = loss_total
-                ckp = f'{args.save_dir}/pretrain_{args.dim}{moe_path}.pth'
+                ckp = f'{args.logging.save_dir}/pretrain_{args.model.dim}{moe_path}.pth'
 
                 # 获取解包后的模型
                 unwrapped_model = accelerator.unwrap_model(model)

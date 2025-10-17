@@ -1,9 +1,7 @@
 import torch
 
 
-def precompute_pos_cis(
-    dim: int, end: int = int(32 * 1024), theta: float = 1e6
-) -> torch.Tensor:
+def precompute_pos_cis(cfg: dict, end: int = int(32 * 1024)) -> torch.Tensor:
     """
     预计算旋转位置编码（RoPE）的复数表示
 
@@ -11,13 +9,14 @@ def precompute_pos_cis(
     使用复数表示可以高效地实现二维旋转变换。
 
     Args:
-        dim: 注意力头的维度（必须是偶数）
+        cfg: 模型配置字典，必须包含 "dim" 和 "rope_theta"
         end: 最大序列长度
-        theta: 频率基数，控制不同维度的旋转速度
 
     Returns:
         复数形式的位置编码张量，形状为 (end, dim//2)
     """
+    dim = cfg["dim"] // cfg["n_heads"]  # head_dim
+    theta = cfg["rope_theta"]
     freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim))
     t = torch.arange(end, device=freqs.device)
     freqs = torch.outer(t, freqs).float()
@@ -43,16 +42,6 @@ def apply_rotary_emb(
     """
 
     def unite_shape(pos_cis: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
-        """
-        调整位置编码的形状以匹配输入张量进行广播
-
-        Args:
-            pos_cis: 位置编码张量
-            x: 输入张量
-
-        Returns:
-            形状调整后的位置编码
-        """
         ndim = x.ndim
         assert 1 < ndim, f"输入张量维度必须大于1，当前为{ndim}"
         assert pos_cis.shape == (

@@ -19,7 +19,7 @@ class MemoryGate(nn.Module):
     - 使用softmax归一化得到候选分数
 
     Args:
-        config: 模型配置对象，需包含以下字段：
+        cfg: 模型配置字典，需包含以下字段：
             - dim: 输入特征维度
             - knowledge_num: 记忆库大小（必须是完全平方数）
             - knowledge_dim: 记忆键的维度
@@ -27,22 +27,22 @@ class MemoryGate(nn.Module):
             - dropout: Dropout概率
     """
 
-    def __init__(self, config: LMConfig):
+    def __init__(self, cfg: dict) -> None:
         """
         初始化记忆门控模块
 
         Args:
-            config: 模型配置对象
+            cfg: 模型配置字典
         """
         super().__init__()
-        self.config = config
-        self.dim = config.dim
-        self.knowledge_num = config.knowledge_num
-        self.knowledge_dim = config.knowledge_dim
+        self.cfg = cfg
+        self.dim = cfg["dim"]
+        self.knowledge_num = cfg["knowledge_num"]
+        self.knowledge_dim = cfg["knowledge_dim"]
 
         # 候选记忆配置
-        self.num_candidates = getattr(config, 'num_candidates', 32)  # 生成的候选数量
-        self.num_selected = getattr(config, 'num_selected', 1)  # 后续选择的最终数量
+        self.num_candidates = cfg.get("num_candidates", 32)  # 生成的候选数量
+        self.num_selected = cfg.get("num_selected", 1)  # 后续选择的最终数量
 
         # 验证知识库数量必须是完全平方数（Product Key Memory的要求）
         assert int(self.knowledge_num ** 0.5) ** 2 == self.knowledge_num, \
@@ -59,7 +59,7 @@ class MemoryGate(nn.Module):
         self.keys = nn.Parameter(torch.randn(2, self.num_keys, self.knowledge_dim // 2))
 
         # Dropout层用于正则化
-        self.dropout = nn.Dropout(config.dropout)
+        self.dropout = nn.Dropout(cfg["dropout"])
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """
@@ -89,13 +89,13 @@ class MemoryGate(nn.Module):
         queries = self.gate_proj(x)  # [batch, seq_len, knowledge_dim]
 
         # 步骤2: 分割查询向量为两部分，用于Product Key
-        q1 = queries[:, :, :self.knowledge_dim // 2]  # 前半部分
-        q2 = queries[:, :, self.knowledge_dim // 2:]  # 后半部分
+        q1 = queries[:, :, : self.knowledge_dim // 2]  # 前半部分
+        q2 = queries[:, :, self.knowledge_dim // 2 :]  # 后半部分
 
         # 步骤3: 计算与两个键集合的相似度分数
         # einsum 'bsd,kd->bsk': (batch, seq, dim) × (keys, dim) → (batch, seq, keys)
-        scores_1 = torch.einsum('bsd,kd->bsk', q1, self.keys[0])  # [batch, seq_len, num_keys]
-        scores_2 = torch.einsum('bsd,kd->bsk', q2, self.keys[1])  # [batch, seq_len, num_keys]
+        scores_1 = torch.einsum("bsd,kd->bsk", q1, self.keys[0])  # [batch, seq_len, num_keys]
+        scores_2 = torch.einsum("bsd,kd->bsk", q2, self.keys[1])  # [batch, seq_len, num_keys]
 
         # 步骤4: 对每个键集合选择top-k候选
         topk_scores_1, topk_indices_1 = scores_1.topk(self.num_candidates, dim=-1)
@@ -108,7 +108,9 @@ class MemoryGate(nn.Module):
 
         # 索引组合：index1 * num_keys + index2
         # 这样可以将二维索引(i, j)映射到一维记忆索引(i * √N + j)
-        combined_indices = topk_indices_1.unsqueeze(-1) * self.num_keys + topk_indices_2.unsqueeze(-2)
+        combined_indices = (
+            topk_indices_1.unsqueeze(-1) * self.num_keys + topk_indices_2.unsqueeze(-2)
+        )
 
         # 步骤6: 展平并选择最终的top-k候选
         # 展平笛卡尔积结果: [batch, seq, num_candidates * num_candidates]
@@ -116,7 +118,9 @@ class MemoryGate(nn.Module):
         combined_indices = combined_indices.view(bsz, seq_len, -1)
 
         # 选择分数最高的num_candidates个候选
-        candidate_scores, candidate_pk_indices = combined_scores.topk(self.num_candidates, dim=-1)
+        candidate_scores, candidate_pk_indices = combined_scores.topk(
+            self.num_candidates, dim=-1
+        )
         candidate_indices = combined_indices.gather(-1, candidate_pk_indices)
 
         # 步骤7: 归一化候选分数并应用dropout

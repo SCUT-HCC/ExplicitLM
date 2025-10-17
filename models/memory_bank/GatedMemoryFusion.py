@@ -23,25 +23,25 @@ class GatedMemoryFusion(nn.Module):
         output = down_proj(silu(gate_proj(x)) * up_proj(x))
 
     Args:
-        config: 模型配置对象，需包含以下字段：
+        cfg: 模型配置字典，需包含以下字段：
             - dim: 隐藏层维度
             - knowledge_dim: 记忆键的维度
             - num_selected: 选中的记忆数量（默认为1）
             - dropout: Dropout概率
     """
 
-    def __init__(self, config: LMConfig):
+    def __init__(self, cfg: dict) -> None:
         """
         初始化门控记忆融合模块
 
         Args:
-            config: 模型配置对象
+            cfg: 模型配置字典
         """
         super().__init__()
-        self.config = config
-        self.dim = config.dim
-        self.knowledge_dim = config.knowledge_dim
-        self.num_selected = getattr(config, 'num_selected', 1)  # 选择的最佳记忆数量
+        self.cfg = cfg
+        self.dim = cfg["dim"]
+        self.knowledge_dim = cfg["knowledge_dim"]
+        self.num_selected = cfg.get("num_selected", 1)  # 选择的最佳记忆数量
 
         # 计算拼接后的输入维度
         # 输入由两部分组成：
@@ -55,7 +55,7 @@ class GatedMemoryFusion(nn.Module):
         self.down_proj = nn.Linear(self.dim, self.dim, bias=False)    # 下投影
 
         # Dropout层用于正则化
-        self.dropout = nn.Dropout(config.dropout)
+        self.dropout = nn.Dropout(cfg["dropout"])
 
     def forward(
         self,

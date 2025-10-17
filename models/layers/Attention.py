@@ -4,7 +4,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from models.configs import LMConfig
 from models.layers.pos_cis import apply_rotary_emb
 
 
@@ -45,48 +44,45 @@ class Attention(nn.Module):
     注意：此版本完全去除了KV cache相关代码，适用于训练场景
     """
 
-    def __init__(self, args: LMConfig):
+    def __init__(self, cfg: dict) -> None:
         """
         初始化注意力模块
 
         Args:
-            args: 模型配置对象
+            cfg: 模型配置字典
         """
         super().__init__()
 
         # 键值头数量配置
-        self.n_kv_heads = (
-            args.n_heads if args.n_kv_heads is None else args.n_kv_heads
+        self.n_kv_heads = cfg["n_kv_heads"] if cfg["n_kv_heads"] is not None else cfg["n_heads"]
+        assert cfg["n_heads"] % self.n_kv_heads == 0, (
+            f"查询头数量({cfg['n_heads']})必须能被键值头数量({self.n_kv_heads})整除"
         )
-        assert (
-            args.n_heads % self.n_kv_heads == 0
-        ), f"查询头数量({args.n_heads})必须能被键值头数量({self.n_kv_heads})整除"
 
         # 注意力头配置
-        self.n_local_heads = args.n_heads
+        self.n_local_heads = cfg["n_heads"]
         self.n_local_kv_heads = self.n_kv_heads
         self.n_rep = self.n_local_heads // self.n_local_kv_heads
-        self.head_dim = args.dim // args.n_heads
+        self.head_dim = cfg["dim"] // cfg["n_heads"]
 
         # 查询、键、值和输出的线性变换
-        self.wq = nn.Linear(args.dim, args.n_heads * self.head_dim, bias=False)
-        self.wk = nn.Linear(args.dim, self.n_kv_heads * self.head_dim, bias=False)
-        self.wv = nn.Linear(args.dim, self.n_kv_heads * self.head_dim, bias=False)
-        self.wo = nn.Linear(args.n_heads * self.head_dim, args.dim, bias=False)
+        self.wq = nn.Linear(cfg["dim"], cfg["n_heads"] * self.head_dim, bias=False)
+        self.wk = nn.Linear(cfg["dim"], self.n_kv_heads * self.head_dim, bias=False)
+        self.wv = nn.Linear(cfg["dim"], self.n_kv_heads * self.head_dim, bias=False)
+        self.wo = nn.Linear(cfg["n_heads"] * self.head_dim, cfg["dim"], bias=False)
 
         # Dropout层
-        self.attn_dropout = nn.Dropout(args.dropout)
-        self.resid_dropout = nn.Dropout(args.dropout)
-        self.dropout = args.dropout
+        self.attn_dropout = nn.Dropout(cfg["dropout"])
+        self.resid_dropout = nn.Dropout(cfg["dropout"])
+        self.dropout = cfg["dropout"]
 
         # Flash Attention支持检测
         self.flash = (
-            hasattr(torch.nn.functional, "scaled_dot_product_attention")
-            and args.flash_attn
+            hasattr(F, "scaled_dot_product_attention") and cfg["flash_attn"]
         )
 
         # 因果注意力掩码（上三角为负无穷）
-        mask = torch.full((1, 1, args.max_seq_len, args.max_seq_len), float("-inf"))
+        mask = torch.full((1, 1, cfg["max_seq_len"], cfg["max_seq_len"]), float("-inf"))
         mask = torch.triu(mask, diagonal=1)
         self.register_buffer("mask", mask, persistent=False)
 
