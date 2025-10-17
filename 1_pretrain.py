@@ -148,5 +148,4 @@ def main(cfg):
 
 
 if __name__ == "__main__":
-    # 注意：train 函数就是位置参数
     launch(_main_cfg_func,main)

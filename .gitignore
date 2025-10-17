@@ -41,6 +41,7 @@ uv.lock
 # SwanLab日志
 swanlog/
 wandb/
+outputs/
 
 # 临时文件
 .swanlab_url

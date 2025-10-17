@@ -169,7 +169,6 @@ def train_epoch(
 
             # 执行验证评估
             val_loss = None
-            Logger(str(val_loader == None),accelerator)
             if val_loader is not None:
                 try:
                     val_loss = validate_model(model, val_loader, loss_fct, accelerator)

@@ -4,7 +4,7 @@ from hydra_zen import builds
 TrainingConf = builds(
     dict,
     # ---- 优化器 / 学习率 ----
-    batch_size=1,
+    batch_size=4,
     accumulation_steps=16,
     epochs=3,
     embeddings_epoch=2,
