@@ -1,7 +1,11 @@
 # ExplicitLM 实验运行指南
 
-## 一、DVC 数据版本控制系统介绍
+**更新**：自 commit `ffc0a80` 起，项目实验配置已全面迁移到 Hydra-Zen 系统。  
+旧版基于 `TRAIN_ARGS` 和手动 DVC 版本变量（如 `DATASET_VERSION`）的流程已废弃。 
 
+## 一、DVC 数据版本控制系统介绍以及Hydra-Zen 配置系统架构
+
+### 1.1DVC 数据版本控制系统
 Data Version Control (DVC) 是一个专为机器学习项目设计的版本控制系统，它解决了Git在管理大型数据文件和模型权重时的局限性。DVC 采用与Git类似的工作流程，但专门针对大文件进行了优化：它将实际的数据文件存储在远程存储系统（如S3、MinIO等）中，而在Git仓库中只保存轻量级的元数据文件（.dvc文件），这些元数据文件记录了数据的哈希值和存储位置。当团队成员需要获取特定版本的数据时，DVC会根据.dvc文件中的信息从远程存储拉取对应的数据，从而实现了数据的版本控制和团队协作。
 
 在ExplicitLM项目中，DVC与Git和SwanLab共同构成了完整的实验管理体系。Git负责管理代码版本，DVC负责管理数据集和模型权重的版本，SwanLab则负责记录实验过程中的指标和可视化结果。这种三者结合的方式确保了实验的完全可复现性：通过Git commit可以恢复代码状态，通过DVC可以恢复数据和模型状态，通过SwanLab可以查看实验的训练曲线和评估指标。每一个实验都会生成一个JSON格式的记录文件，其中包含了所有必要的版本信息和复现指令，使得任何团队成员都可以精确地重现某次实验的结果。
@@ -20,6 +24,40 @@ Data Version Control (DVC) 是一个专为机器学习项目设计的版本控�
 
 项目的`.gitignore`文件已经配置了完善的DVC规则：实际的数据目录（如`data/raw/*`、`data/database/*`）会被Git忽略，但对应的.dvc元数据文件（如`data/database.dvc`）会被Git追踪。模型权重目录`checkpoints/`也遵循同样的规则，只有.dvc文件会被提交到Git仓库。DVC的临时文件和缓存目录（如`.dvc/tmp`、`.dvc/cache`）也被正确地排除在Git追踪之外，避免了不必要的文件进入版本控制系统。
 
+### 注意：自 commit `ffc0a80` 起，数据集版本不再通过环境变量指定，而是由 Hydra-Zen 配置系统统一管理（见下文）。
+
+## 1.2Hydra-Zen 配置系统架构
+
+自 commit `ffc0a80` 起，ExplicitLM 项目全面采用 **Hydra-Zen** 作为统一的实验配置管理系统。该系统基于 [Hydra](https://hydra.cc/) 和 [hydra-zen](https://mit-ll-responsible-ai.github.io/hydra-zen/) 构建，旨在实现：
+
+- **结构化配置**：将数据集、模型、训练、日志等参数模块化组织  
+- **可组合性**：通过配置组合（composition）灵活复用和覆盖设置  
+- **命令行友好**：支持运行时动态覆盖任意配置字段  
+- **版本一致性**：配置与代码、数据一同纳入 Git/DVC 管理，确保实验可复现  
+
+### 配置模块结构
+
+所有配置定义位于项目根目录的 `config/` Python 包中，结构如下：
+config/
+├── init.py
+├── dataset.py      # 数据集路径与 DVC 版本控制
+├── model.py        # 模型架构参数（如 dim, n_layers, knowledge_num）
+├── training.py     # 训练超参（epochs, batch_size, learning_rate 等）
+├── logging.py      # 日志与 SwanLab 集成开关
+└── exp_*.yaml      # （可选）实验专属配置组合文件
+
+
+每个 `.py` 文件通过 `hydra_zen.store` 注册一组命名配置（例如 `"default"`、`"base"`），主训练脚本 `1_pretrain.py` 在启动时自动加载这些配置。
+
+### 核心优势
+
+- **无需修改代码即可切换实验设置**：只需更改配置名称或覆盖参数  
+- **避免 shell 脚本参数爆炸**：不再依赖 `TRAIN_ARGS` 或环境变量传递复杂参数  
+- **配置即元数据**：实验记录中的 `hyperparameters` 字段直接来自配置树，结构清晰、无歧义  
+
+> **重要**：所有新实验必须基于此配置系统开发。旧版通过命令行或 shell 变量传参的方式已废弃，继续使用将导致配置缺失或训练异常。
+
+
 ## 二、使用 DVC 管理项目数据集
 
 ### 2.1 数据集版本控制的基本工作流
@@ -32,27 +70,29 @@ Data Version Control (DVC) 是一个专为机器学习项目设计的版本控�
 
 ExplicitLM项目采用细粒度的数据集组织方式，每个独立的数据集都有自己的.dvc追踪文件：
 
-- **训练数据集** (`data/database/`)：包含预训练使用的主要文本数据，通过`data/database.dvc`文件追踪。这是最大也是最核心的数据集，更新频率相对较低。在实验脚本中通过`DATASET_VERSION`变量指定其版本。
+- **训练数据集** (`data/database/`)：包含预训练使用的主要文本数据，通过data/database.dvc文件追踪。这是最大也是最核心的数据集，更新频率相对较低。在实验配置中通过 `config.dataset.train.version` 字段指定其版本。
 
-- **验证数据集** (`data/benchmarks/`)：包含用于模型评估的基准测试数据，通过`data/benchmarks.dvc`文件追踪。验证集的版本控制独立于训练集，这使得可以在保持训练数据不变的情况下更新评估标准，或者在不同的评估集上测试同一个训练配置。实验脚本中通过`VAL_DATASET_VERSION`变量指定版本。
+- **验证数据集** (`data/benchmarks/`)：包含用于模型评估的基准测试数据，通过`data/benchmarks.dvc`文件追踪。验证集的版本控制独立于训练集，这使得可以在保持训练数据不变的情况下更新评估标准，或者在不同的评估集上测试同一个训练配置。实验脚本中通过`config.dataset.train.version`变量指定版本。
 
-- **预训练嵌入** (`data/embeddings/`，可选)：如果使用预训练的词向量或其他嵌入表示，可以单独追踪其版本。通过`EMBEDDING_VERSION`变量控制。
+- **预训练嵌入** (`data/embeddings/`，可选)：如果使用预训练的词向量或其他嵌入表示，可以单独追踪其版本。通过`config.dataset.embedding.version`变量控制。
 
-- **知识库初始化数据** (`data/knowledge_base/`，可选)：用于初始化知识库的结构化数据，独立版本控制通过`DATABASE_VERSION`变量。
+- **知识库初始化数据** (`data/knowledge_base/`，可选)：用于初始化知识库的结构化数据，独立版本控制通过`config.dataset.knowledge_base.version`变量。
 
-- **缓存数据** (`data/cache/`，可选)：预处理后的缓存文件，可以通过`CACHE_VERSION`变量单独指定版本。
+- **缓存数据** (`data/cache/`，可选)：预处理后的缓存文件，可以通过`config.dataset.cache.version`变量单独指定版本。
+
 
 这种细粒度的组织方式带来的最大好处是实验设计的灵活性。例如，在进行消融实验时，可以固定所有其他数据集的版本，只改变训练数据集的版本，从而精确地隔离变量影响。或者在评估模型泛化能力时，可以固定训练数据和模型配置，只更换不同的验证数据集版本。
 
 ### 2.3 实验中的数据版本指定
 
+在 Hydra-Zen 配置系统中，每个数据集的版本通过 config/dataset.py 中的配置字段声明。
 在实验脚本的开头，需要声明每个数据集使用的版本。版本指定有三种方式：
 
 **使用当前版本**：将版本变量设置为空字符串（如`DATASET_VERSION=""`），表示使用当前Git HEAD对应的数据版本。这是最常见的情况，适用于使用最新数据进行新实验的场景。
 
 **指定历史版本**：将版本变量设置为特定的Git commit哈希（如`DATASET_VERSION="abc1234"`），表示使用该commit对应时刻的数据版本。这种方式常用于复现历史实验或进行严格的对比实验。可以从之前的实验记录JSON文件中获取该commit哈希值，确保使用完全相同的数据。
 
-**混合版本策略**：不同数据集可以指定不同的版本。例如，`DATASET_VERSION="abc1234"`指定使用历史版本的训练数据，而`VAL_DATASET_VERSION=""`使用当前最新的验证数据。这种策略在逐步更新数据集时非常有用，可以保持部分数据的稳定性，同时测试新数据的效果。
+**混合版本策略**：不同数据集可以指定不同的版本。例如，`train.version="abc1234"`指定使用历史版本的训练数据，而`val.version=""`使用当前最新的验证数据。这种策略在逐步更新数据集时非常有用，可以保持部分数据的稳定性，同时测试新数据的效果。
 
 实验脚本会根据这些版本变量自动执行数据同步。如果指定了历史版本，脚本会先使用`git checkout`切换到对应的commit获取该版本的.dvc文件，然后执行`dvc checkout`恢复对应版本的数据，最后再切换回原来的代码分支。如果版本变量为空，则直接使用当前的数据，不进行任何切换操作。
 
@@ -60,7 +100,7 @@ ExplicitLM项目采用细粒度的数据集组织方式，每个独立的数据�
 
 查看某个数据集当前的版本信息，可以使用`git log data/database.dvc`命令，这会显示该.dvc文件的提交历史，每次提交都对应一次数据更新。通过`dvc diff`命令可以比较不同版本之间的数据差异，虽然这个命令对于大规模数据集来说可能比较耗时。
 
-在实际工作中，更常用的方式是查看实验记录文件。每个实验的JSON记录中都包含了`versions.data`字段，其中详细记录了该实验使用的所有数据集版本。例如，要复现实验exp_001，可以从`experiments/records/exp_001.json`中读取`versions.data.dataset_commit`字段获取训练数据的版本哈希，然后在新实验中使用相同的版本。
+在实际工作中，更常用的方式是查看实验记录文件。每个实验的JSON记录中都包含了`versions.data`字段，其中详细记录了该实验使用的所有数据集版本。例如，要复现实验exp_001，可以从`experiments/records/exp_001.json`中读取`versions.data.train`字段获取训练数据的版本哈希，然后在新实验中使用相同的版本。
 
 如果需要批量查询多个实验使用的数据版本，可以使用jq工具：`jq '.versions.data' experiments/records/*.json`会列出所有实验的数据版本信息。这种方式可以快速找到使用特定数据版本的所有实验，或者分析数据更新对实验结果的影响。
 
@@ -76,9 +116,9 @@ ExplicitLM项目采用细粒度的数据集组织方式，每个独立的数据�
 
 首先是实验的元数据定义。`EXP_ID`是实验的唯一标识符，应当在整个项目中保持唯一，建议使用有意义的命名或递增的编号。`EXP_DESC`是实验的中文描述，应当简要说明本次实验的主要目的和配置特点，这个描述会被记录到实验元数据文件中，便于日后查询和理解。
 
-接下来是数据版本的声明。如前所述，每个数据集都可以独立指定版本，留空表示使用当前版本，填入commit哈希表示使用特定历史版本。这些版本信息不仅决定了实验使用的数据，也会被完整记录到实验元数据中，是实验可复现性的关键组成部分。
+接下来是数据版本的声明，数据版本现在由 Hydra-Zen 配置文件管理（见 config/dataset.py），无需在此处手动指定。
 
-最后是训练参数`TRAIN_ARGS`，这里填写所有需要传递给训练脚本`1_pretrain.py`的命令行参数。参数应当使用长格式（如`--epochs 10`而非`-e 10`）以提高可读性。常用的参数包括训练轮数`--epochs`、知识库大小`--knowledge_num`、模型维度`--dim`、层数`--n_layers`、批次大小`--batch_size`、学习率`--learning_rate`等。
+最后，训练超参数（如 --epochs、--dim 等）现在通过 Hydra-Zen 配置组合指定，不再通过命令行参数传递。
 
 脚本的最后两行是固定的模板代码：首先获取脚本所在目录的绝对路径，然后source核心执行脚本`_run_experiment_core.sh`。核心脚本包含了实验执行的完整逻辑，包括环境检查、数据同步、训练执行、结果记录等步骤。
 
@@ -90,23 +130,9 @@ ExplicitLM项目采用细粒度的数据集组织方式，每个独立的数据�
 # 实验003 - 调整学习率和模型深度
 ################################################################################
 
-# 实验配置
-EXP_ID="exp_003"
-EXP_DESC="学习率降低至1e-4，增加模型层数至12层"
-
-# 数据版本（使用exp_001相同的数据以保证对比公平性）
-DATASET_VERSION="d2de793a"          # 从exp_001复制
-VAL_DATASET_VERSION="d2de793a"      # 从exp_001复制
-EMBEDDING_VERSION=""                 # 不使用预训练嵌入
-DATABASE_VERSION=""                  # 使用默认知识库
-CACHE_VERSION=""                     # 不使用缓存
-
-# 训练参数
-TRAIN_ARGS="--epochs 10 --knowledge_num 1048576 --dim 512 --n_layers 12 --batch_size 48 --learning_rate 1e-4 --use_swanlab"
-
 # 执行实验（固定模板）
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/_run_experiment_core.sh"
+source "${SCRIPT_DIR}/_run_experiment_core_hydra_zen.sh"
 ```
 
 #### 3.1.2 执行实验
@@ -119,13 +145,13 @@ source "${SCRIPT_DIR}/_run_experiment_core.sh"
 
 **代码版本记录**：脚本会获取当前代码的Git commit哈希值，这个哈希值唯一标识了实验使用的代码版本。即使在未提交的代码上运行实验，脚本也会记录当前的commit，并在实验记录中标注代码可能包含未提交的修改，提醒后续复现时需要注意。
 
-**数据同步阶段**：根据实验脚本中声明的数据版本变量，脚本会逐个数据集进行版本切换和同步。对于每个非空的版本变量，脚本会先用`git checkout <version> -- <dvc_file>`切换到指定版本的.dvc元数据文件，然后执行`dvc checkout <dvc_file>`恢复对应版本的数据文件，最后切换回当前的Git分支。如果某个数据集的版本变量为空，则跳过该数据集的同步，直接使用当前已有的数据。整个过程中会输出详细的日志，显示每个数据集的版本切换情况。
+**数据同步阶段**：根据 config/dataset.py 中声明的数据版本自动同步，脚本会逐个数据集进行版本切换和同步。对于每个非空的版本变量，脚本会先用`git checkout <version> -- <dvc_file>`切换到指定版本的.dvc元数据文件，然后执行`dvc checkout <dvc_file>`恢复对应版本的数据文件，最后切换回当前的Git分支。如果某个数据集的版本变量为空，则跳过该数据集的同步，直接使用当前已有的数据。整个过程中会输出详细的日志，显示每个数据集的版本切换情况。
 
-**训练执行阶段**：数据准备就绪后，脚本会构建完整的训练命令并执行。命令格式为`accelerate launch 1_pretrain.py <TRAIN_ARGS>`，其中`<TRAIN_ARGS>`是脚本中定义的训练参数。训练过程的标准输出和标准错误会被同时显示在终端并保存到日志文件`logs/${EXP_ID}.log`中，便于后续查看和调试。如果训练过程中发生错误，脚本会捕获退出码并终止后续步骤。
+**训练执行阶段**：数据准备就绪后，脚本会执行训练命令。执行 python 1_pretrain.py --config-name=<exp_config>，所有超参由 Hydra 自动注入。训练过程的标准输出和标准错误会被同时显示在终端并保存到日志文件`logs/${EXP_ID}.log`中，便于后续查看和调试。如果训练过程中发生错误，脚本会捕获退出码并终止后续步骤。
 
 **结果收集阶段**：训练完成后，脚本会从`.swanlab_url`文件中读取SwanLab实验页面的URL（该文件由修改后的`1_pretrain.py`在训练结束时生成）。然后使用DVC追踪生成的模型权重目录`checkpoints/${EXP_ID}/`，执行`dvc add checkpoints/${EXP_ID}.dvc`创建权重的版本追踪文件，并执行`dvc push`将权重上传到MinIO远程存储。
 
-**元数据生成阶段**：脚本会自动生成一个JSON格式的实验记录文件`experiments/records/${EXP_ID}.json`。这个文件包含了实验的所有关键信息：实验ID和描述、时间戳、代码版本、所有数据集的版本信息、训练参数、SwanLab URL、模型权重路径和版本哈希、运行环境信息（Python版本、CUDA版本、GPU数量）、以及完整的复现指令。
+**元数据生成阶段**：脚本会自动生成一个JSON格式的实验记录文件`experiments/records/${EXP_ID}.json`。这个文件包含了实验的所有关键信息：实验ID和描述、时间戳、代码版本、所有数据集的版本信息、训练参数、SwanLab URL、模型权重路径和版本哈希、运行环境信息（Python版本、CUDA版本、GPU数量）、以及完整的复现指令。记录完整的 Hydra 配置树作为 hyperparameters 字段。
 
 **版本提交阶段**：最后，脚本会将所有变更一次性提交到Git仓库。提交的内容包括新生成的实验记录文件、模型权重的.dvc文件、以及任何在实验过程中修改的代码（如果有未提交的代码修改）。提交信息会清晰地标注实验ID和描述，格式为`chore: 添加实验记录 exp_003 - 学习率降低至1e-4，增加模型层数至12层`。
 
@@ -137,7 +163,7 @@ source "${SCRIPT_DIR}/_run_experiment_core.sh"
 
 #### 3.2.1 集群实验脚本的结构
 
-集群模式的实验脚本采用统一脚本的设计，通过命令行参数控制执行哪个阶段。脚本的参数定义部分与单机模式完全相同，包括实验ID、描述、数据版本和训练参数。不同之处在于脚本的执行部分：脚本接受一个位置参数来指定运行阶段，可选值为`pre`（前置阶段）、`train`（训练阶段）、`post`（后续阶段）。根据参数的值，脚本会source对应的核心脚本文件。
+集群模式的实验脚本采用统一脚本的设计，通过命令行参数控制执行哪个阶段。脚本的参数定义部分与单机模式完全相同，包括实验ID、描述、数据版本和训练参数。不同之处在于脚本的执行部分：脚本接受一个位置参数来指定运行阶段，可选值为`pre`（前置阶段）、`train`（训练阶段）、`post`（后续阶段）。根据参数的值，脚本会 source 对应的 _hydra_zen 核心脚本文件。
 
 一个集群实验脚本的典型结构如下：
 
@@ -153,7 +179,8 @@ source "${SCRIPT_DIR}/_run_experiment_core.sh"
 ################################################################################
 
 # ============================================================================
-# 实验配置（只需在这里修改一次）
+# 实验配置（只需定义 ID 和描述）
+# 数据版本和训练参数请在 config/ 目录下通过 Hydra-Zen 配置管理
 # ============================================================================
 EXP_ID="exp_001"
 EXP_DESC="基线实验 knowledge_num=1M epochs=10"
@@ -177,18 +204,17 @@ case "$STAGE" in
     pre)
         echo "执行前置阶段（登陆节点）..."
         SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-        source "${SCRIPT_DIR}/_run_experiment_cluster_pre.sh"
+        source "${SCRIPT_DIR}/_run_experiment_cluster_pre_hydra_zen.sh""
         ;;
     train)
         echo "执行训练阶段（计算节点）..."
         SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-        source "${SCRIPT_DIR}/_run_experiment_cluster_train.sh"
+        source "${SCRIPT_DIR}/_run_experiment_cluster_train_hydra_zen.sh"
         ;;
     post)
         echo "执行后续阶段（登陆节点）..."
         SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-        source "${SCRIPT_DIR}/_run_experiment_cluster_post.sh"
-        ;;
+        source "${SCRIPT_DIR}/_run_experiment_cluster_post_hydra_zen.sh"
     *)
         echo "错误：未知阶段 '$STAGE'"
         echo ""
@@ -253,7 +279,7 @@ ssh user@login-node
 cd /path/to/ExplicitLM
 
 # 执行前置阶段
-./experiments/scripts/exp_002_cluster.sh pre
+./experiments/scripts/exp_002_cluster_hydra_zen.sh pre
 ```
 
 这一步会输出类似如下的日志：
@@ -288,7 +314,7 @@ ssh user@compute-node
 cd /path/to/ExplicitLM
 
 # 执行训练阶段
-./experiments/scripts/exp_002_cluster.sh train
+./experiments/scripts/exp_002_cluster_hydra_zen.sh train
 ```
 
 训练过程可能持续数小时甚至数天，可以通过日志文件`logs/exp_002.log`监控进度。
@@ -314,7 +340,7 @@ ssh user@login-node
 cd /path/to/ExplicitLM
 
 # 执行后续阶段
-./experiments/scripts/exp_002_cluster.sh post
+./experiments/scripts/exp_002_cluster_hydra_zen.sh post
 ```
 
 这一步会输出类似如下的日志：
@@ -404,11 +430,15 @@ dvc pull checkpoints/exp_001.dvc
 除了恢复代码和数据，还需要执行训练命令。可以从实验记录文件的`reproduction.full_command`字段复制完整命令：
 
 ```bash
-# 恢复代码和数据（同上）
-# ...
 
-# 重新训练
-accelerate launch 1_pretrain.py --epochs 10 --knowledge_num 1048576 --dim 512 --n_layers 8 --batch_size 48 --learning_rate 2e-4 --use_swanlab
+# 恢复代码和数据（同上）
+git checkout d2de793a
+git checkout d2de793a -- data/database.dvc
+dvc checkout data/database.dvc
+git checkout -
+
+# 重新训练（使用 Hydra）
+python 1_pretrain.py --config-name=exp_001 ++experiment.id=exp_001_repro
 ```
 
 重新训练得到的模型权重哈希值应当与原实验记录中的`checkpoint_hash`一致（在相同的随机种子和硬件条件下）。如果哈希值不同，可能是由于浮点运算的不确定性或硬件差异导致的轻微数值差异，这在深度学习中是正常现象。
@@ -501,12 +531,12 @@ ExplicitLM/
 │   └── ...                         # 其他实验的权重和.dvc文件
 ├── experiments/                    # 实验管理目录
 │   ├── scripts/                    # 实验脚本目录
-│   │   ├── _run_experiment_core.sh           # 单机模式核心脚本
-│   │   ├── _run_experiment_cluster_pre.sh    # 集群模式前置阶段脚本
-│   │   ├── _run_experiment_cluster_train.sh  # 集群模式训练阶段脚本
-│   │   ├── _run_experiment_cluster_post.sh   # 集群模式后续阶段脚本
+│   │   ├── _run_experiment_core_hydra_zen.sh           # 单机模式核心脚本
+│   │   ├── _run_experiment_cluster_pre_hydra_zen.sh    # 集群模式前置阶段脚本
+│   │   ├── _run_experiment_cluster_train_hydra_zen.sh  # 集群模式训练阶段脚本
+│   │   ├── _run_experiment_cluster_post_hydra_zen.sh   # 集群模式后续阶段脚本
 │   │   ├── exp_001.sh              # 实验001单机脚本
-│   │   ├── exp_001_cluster.sh      # 实验001集群脚本
+│   │   ├── exp_001_cluster_hydra_zen.sh      # 实验001集群脚本
 │   │   └── ...                     # 其他实验脚本
 │   └── records/                    # 实验记录目录
 │       ├── README.md               # 实验记录文件说明文档
@@ -528,7 +558,7 @@ ExplicitLM/
     "description": "基线实验 knowledge_num=1M epochs=10",
     "timestamp": "2024-01-15T08:30:00Z",
     "script": "exp_001.sh",
-    "command": "accelerate launch 1_pretrain.py --epochs 10 --knowledge_num 1048576 --dim 512 --n_layers 8 --batch_size 48 --learning_rate 2e-4 --use_swanlab"
+    "command": "python 1_pretrain.py --config-name=exp_001"
   },
   "versions": {
     "code_commit": "d2de793a1234567890abcdef1234567890abcdef",
@@ -569,10 +599,9 @@ ExplicitLM/
       "git checkout d2de793a -- data/benchmarks.dvc && dvc checkout data/benchmarks.dvc && git checkout -"
     ],
     "checkpoint_pull": "dvc pull checkpoints/exp_001.dvc",
-    "full_command": "git checkout d2de793a && git checkout d2de793a -- data/database.dvc && dvc checkout data/database.dvc && git checkout - && git checkout d2de793a -- data/benchmarks.dvc && dvc checkout data/benchmarks.dvc && git checkout - && accelerate launch 1_pretrain.py --epochs 10 --knowledge_num 1048576 --dim 512 --n_layers 8 --batch_size 48 --learning_rate 2e-4 --use_swanlab"
+    "full_command": "git checkout d2de793a && git checkout d2de793a -- data/database.dvc && dvc checkout data/database.dvc && git checkout - && git checkout d2de793a -- data/benchmarks.dvc && dvc checkout data/benchmarks.dvc && git checkout - && python 1_pretrain.py --config-name=exp_001"
   }
 }
-```
 
 ### 5.3 常用命令速查
 
@@ -606,9 +635,9 @@ dvc status
 ./experiments/scripts/exp_001.sh
 
 # 集群模式三阶段执行
-./experiments/scripts/exp_001_cluster.sh pre    # 登录节点
-./experiments/scripts/exp_001_cluster.sh train  # 计算节点
-./experiments/scripts/exp_001_cluster.sh post   # 登录节点
+./experiments/scripts/exp_001_cluster_hydra_zen.sh pre    # 登录节点
+./experiments/scripts/exp_001_cluster_hydra_zen.sh train  # 计算节点
+./experiments/scripts/exp_001_cluster_hydra_zen.sh post   # 登录节点
 
 # 查看实验记录
 cat experiments/records/exp_001.json | jq '.'
@@ -642,5 +671,5 @@ grep -l '"dataset_commit": "d2de793a"' experiments/records/*.json
 - [ ] 确认数据目录权限正确：`ls -ld data/database/`
 - [ ] 确认磁盘空间充足：`df -h`
 - [ ] 查看详细的错误日志：检查`logs/`目录和终端输出
-- [ ] 确认实验脚本中的变量定义正确：`grep -E "EXP_ID|TRAIN_ARGS" <script>`
+- [ ] 确认实验脚本中的变量定义正确：`grep -E "EXP_ID" <script>`   (TRAIN_ARGS 已由 Hydra-Zen 配置管理，无需在脚本中定义)
 - [ ] 确认Git工作目录干净或已知未提交的修改：`git status`
