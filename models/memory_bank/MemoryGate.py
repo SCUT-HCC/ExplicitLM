@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import matplotlib.pyplot as plt
+import numpy as np
 
 from models.configs import LMConfig
 
@@ -60,6 +62,9 @@ class MemoryGate(nn.Module):
 
         # Dropout层用于正则化
         self.dropout = nn.Dropout(cfg["dropout"])
+
+        #新增记录使用频率的字典
+        self.memory_usage=np.zeros(self.knowledge_num)
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """
@@ -123,8 +128,25 @@ class MemoryGate(nn.Module):
         )
         candidate_indices = combined_indices.gather(-1, candidate_pk_indices)
 
+        #更新记忆使用频率
+        for idx in candidate_indices.view(-1).cpu().numpy():
+            self.memory_usage[idx] += 1
+
         # 步骤7: 归一化候选分数并应用dropout
         candidate_scores = F.softmax(candidate_scores, dim=-1)
         candidate_scores = self.dropout(candidate_scores)
 
         return candidate_indices, candidate_scores
+
+    def plot_memory_usage(self, epoch: int) -> None:
+        """
+        生成并保存每个epoch的记忆库使用情况热力图
+        """
+        plt.figure(figsize=(10, 6))
+        plt.imshow(self.memory_usage.reshape(int(self.knowledge_num ** 0.5), -1), cmap='hot', interpolation='nearest')
+        plt.colorbar(label="Usage Frequency")
+        plt.title(f"Memory Bank Usage Heatmap - Epoch {epoch}")
+        plt.xlabel("Memory Entry Index")
+        plt.ylabel("Memory Entry Index")
+        plt.savefig(f"memory_usage_epoch_{epoch}.png")
+        plt.close()
