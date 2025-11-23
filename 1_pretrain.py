@@ -176,6 +176,10 @@ def main(cfg):
     for epoch in range(start_epoch, tr_cfg.epochs):
         # 只有在起始 epoch 才需要跳过 resume_step，后续 epoch 都从 0 开始
         current_resume_step = resume_step if epoch == start_epoch else 0
+        
+        # 在每个 epoch 开始时，清空记忆库使用情况
+        model.memory_usage.fill(0)
+
         train_epoch(
             epoch=epoch,
             accelerator=accelerator,
@@ -190,6 +194,11 @@ def main(cfg):
             val_loader=val_loader,
             resume_step=current_resume_step  # [新增] 传递 resume_step
         )
+
+        #每10个epoch生成一次热力图
+        if epoch % 10 == 0:
+        model.plot_memory_usage(epoch)
+
         gc.collect()
         torch.cuda.empty_cache()
 
