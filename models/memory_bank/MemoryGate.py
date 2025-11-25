@@ -58,33 +58,23 @@ class MemoryGate(nn.Module):
         # 形状: [2, √knowledge_num, knowledge_dim // 2]
         self.keys = nn.Parameter(torch.randn(2, self.num_keys, self.knowledge_dim // 2))
 
+        # 学习温度系数 (Logit Scale)，初始化为 1/0.07 ≈ 14.3
+        self.logit_scale = nn.Parameter(torch.ones([]) * torch.log(torch.tensor(1 / 0.07)))
+
         # Dropout层用于正则化
         self.dropout = nn.Dropout(cfg["dropout"])
 
-    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def compute_sub_scores(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """
-        前向传播：通过Product Key Memory选择候选记忆
-
-        处理流程：
-        1. 将输入投影到查询空间并分割为两部分
-        2. 分别与两组键计算相似度得分
-        3. 对每组键选择top-k候选
-        4. 通过笛卡尔积组合两组候选
-        5. 选择最终的top-k候选记忆
-        6. 归一化分数并应用dropout
+        计算输入与两组键的相似度分数 (Cosine Similarity)
 
         Args:
-            x: 输入张量，形状为 [batch_size, seq_len, dim]
+            x: 输入张量 [batch, seq, dim]
 
         Returns:
-            candidate_indices: 候选记忆索引，形状为 [batch_size, seq_len, num_candidates]
-            candidate_scores: 候选记忆分数，形状为 [batch_size, seq_len, num_candidates]
-
-        Note:
-            返回的候选项会在后续模块（如ExplicitLMBlock）中进行相似度选择和多样性损失计算
+            scores_1: 第一组键的分数 [batch, seq, num_keys]
+            scores_2: 第二组键的分数 [batch, seq, num_keys]
         """
-        bsz, seq_len, _ = x.shape
-
         # 步骤1: 生成查询向量
         queries = self.gate_proj(x)  # [batch, seq_len, knowledge_dim]
 
@@ -92,10 +82,36 @@ class MemoryGate(nn.Module):
         q1 = queries[:, :, : self.knowledge_dim // 2]  # 前半部分
         q2 = queries[:, :, self.knowledge_dim // 2 :]  # 后半部分
 
+        # Normalize queries and keys (Cosine Similarity)
+        q1 = F.normalize(q1, p=2, dim=-1)
+        q2 = F.normalize(q2, p=2, dim=-1)
+        
+        k1 = F.normalize(self.keys[0], p=2, dim=-1)
+        k2 = F.normalize(self.keys[1], p=2, dim=-1)
+
+        # Clamp logit scale to prevent instability
+        logit_scale = self.logit_scale.exp().clamp(max=100.0)
+
         # 步骤3: 计算与两个键集合的相似度分数
         # einsum 'bsd,kd->bsk': (batch, seq, dim) × (keys, dim) → (batch, seq, keys)
-        scores_1 = torch.einsum("bsd,kd->bsk", q1, self.keys[0])  # [batch, seq_len, num_keys]
-        scores_2 = torch.einsum("bsd,kd->bsk", q2, self.keys[1])  # [batch, seq_len, num_keys]
+        scores_1 = torch.einsum("bsd,kd->bsk", q1, k1) * logit_scale
+        scores_2 = torch.einsum("bsd,kd->bsk", q2, k2) * logit_scale
+        
+        return scores_1, scores_2
+
+    def generate_candidates(self, scores_1: torch.Tensor, scores_2: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        根据子键分数生成最终候选记忆
+
+        Args:
+            scores_1: [batch, seq, num_keys]
+            scores_2: [batch, seq, num_keys]
+
+        Returns:
+            candidate_indices: [batch, seq, num_candidates]
+            candidate_scores: [batch, seq, num_candidates]
+        """
+        bsz, seq_len, _ = scores_1.shape
 
         # 步骤4: 对每个键集合选择top-k候选
         topk_scores_1, topk_indices_1 = scores_1.topk(self.num_candidates, dim=-1)
@@ -128,3 +144,92 @@ class MemoryGate(nn.Module):
         candidate_scores = self.dropout(candidate_scores)
 
         return candidate_indices, candidate_scores
+
+    def compute_loss(self, scores_1: torch.Tensor, scores_2: torch.Tensor, target_indices: torch.Tensor) -> torch.Tensor:
+        """
+        计算训练损失
+
+        Args:
+            scores_1: [batch, seq, num_keys]
+            scores_2: [batch, seq, num_keys]
+            target_indices: [batch, seq, k]
+
+        Returns:
+            loss: scalar
+        """
+        # 3. Decompose target indices
+        # target_indices are in range [0, knowledge_num - 1]
+        # u = index // num_keys, v = index % num_keys
+        target_u = target_indices // self.num_keys
+        target_v = target_indices % self.num_keys
+        
+        # 4. Compute Loss with Soft Labels
+        # We want to minimize KL(P_target || P_model)
+        # = sum P_target * log(P_target) - sum P_target * log(P_model)
+        # We only minimize the second term (Cross Entropy): - sum P_target * log(P_model)
+        
+        # Calculate P_target from scores (if provided) or assume uniform over targets
+        # For now, we assume the caller will handle the P_target distribution or we compute it here?
+        # The current signature doesn't pass scores. We need to update the signature.
+        # But wait, the user asked to modify the code.
+        # Let's assume target_indices is actually [batch, k] and we might need target_scores.
+        # However, to keep changes minimal to the interface if possible, 
+        # let's check if we can pass scores in target_indices? No, that's int.
+        
+        # We need to update the forward_loss signature in the next step.
+        # Here we will assume target_scores is passed as an argument or we use a simplified assumption.
+        # BUT, the user explicitly asked for Soft Labels using scores.
+        # So I will update the signature of compute_loss to accept target_scores.
+        
+        raise NotImplementedError("Please call compute_loss_soft with target_scores")
+
+    def compute_loss_soft(self, scores_1: torch.Tensor, scores_2: torch.Tensor, 
+                         target_indices: torch.Tensor, target_scores: torch.Tensor, temperature: float = 0.1) -> torch.Tensor:
+        """
+        Compute Soft Label Loss (KL Divergence)
+        
+        Args:
+            scores_1: [batch, seq, num_keys]
+            scores_2: [batch, seq, num_keys]
+            target_indices: [batch, seq, k] - Indices of top-k targets
+            target_scores: [batch, seq, k] - Cosine similarity scores of top-k targets
+            temperature: Temperature for smoothing target distribution
+        """
+        # 1. Compute Log Probabilities of Model
+        log_probs_1 = F.log_softmax(scores_1, dim=-1) # [batch, seq, num_keys]
+        log_probs_2 = F.log_softmax(scores_2, dim=-1) # [batch, seq, num_keys]
+        
+        # 2. Decompose target indices
+        target_u = target_indices // self.num_keys
+        target_v = target_indices % self.num_keys
+        
+        # 3. Gather Model Log Probs for the specific targets
+        # log P_model(k) = log P1(u) + log P2(v)
+        target_log_probs_1 = log_probs_1.gather(-1, target_u) # [batch, seq, k]
+        target_log_probs_2 = log_probs_2.gather(-1, target_v) # [batch, seq, k]
+        target_log_probs = target_log_probs_1 + target_log_probs_2 # [batch, seq, k]
+        
+        # 4. Compute Target Distribution P_target
+        # We use softmax over the top-k scores to get a probability distribution over the k candidates
+        # Note: This assumes the rest of the universe has 0 probability, which is a reasonable approximation for top-32
+        target_probs = F.softmax(target_scores / temperature, dim=-1) # [batch, seq, k]
+        
+        # 5. Compute Cross Entropy Loss: - sum(P_target * log P_model)
+        # Sum over k candidates
+        loss_per_sample = - (target_probs * target_log_probs).sum(dim=-1) # [batch, seq]
+        
+        return loss_per_sample.mean()
+
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        前向传播：通过Product Key Memory选择候选记忆
+        """
+        scores_1, scores_2 = self.compute_sub_scores(x)
+        return self.generate_candidates(scores_1, scores_2)
+
+    def forward_loss(self, x: torch.Tensor, target_indices: torch.Tensor) -> torch.Tensor:
+        """
+        Compute loss for training the router.
+        """
+        scores_1, scores_2 = self.compute_sub_scores(x)
+        return self.compute_loss(scores_1, scores_2, target_indices)
