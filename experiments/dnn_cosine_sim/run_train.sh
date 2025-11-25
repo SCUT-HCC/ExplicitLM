@@ -27,7 +27,7 @@ echo "Detected Knowledge Num: $KNOWLEDGE_NUM"
 
 # Launch training
 echo "Starting training..."
-accelerate launch experiments/dnn_cosine_sim/train_router.py \
+accelerate launch train_router.py \
     --data_path "$DATA_PATH" \
     --knowledge_num "$KNOWLEDGE_NUM" \
     --batch_size 8 \

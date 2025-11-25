@@ -58,22 +58,27 @@ class RouterDataset(Dataset):
             "target_scores": torch.tensor(item['target_scores'], dtype=torch.float)
         }
 
-def calculate_metrics(pred_indices, target_indices):
+def calculate_metrics(pred_indices, target_indices, target_scores=None):
     """
-    Calculate Recall@K and Hit Rate
+    Calculate Recall@K, Hit Rate, and Soft Recall
     pred_indices: [batch, k_pred]
     target_indices: [batch, k_target]
+    target_scores: [batch, k_target] (Optional, for Soft Recall)
     
     Returns:
         dict with raw sums and counts for accumulation
     """
     batch_size = pred_indices.size(0)
     recall_sum = 0
+    soft_recall_sum = 0
     hit_sum = 0
     correct_count_sum = 0
     
     pred_indices_cpu = pred_indices.detach().cpu().numpy()
     target_indices_cpu = target_indices.detach().cpu().numpy()
+    
+    if target_scores is not None:
+        target_scores_cpu = target_scores.detach().cpu().numpy()
     
     for i in range(batch_size):
         targets = set(target_indices_cpu[i])
@@ -86,8 +91,30 @@ def calculate_metrics(pred_indices, target_indices):
         recall_sum += num_correct / len(targets) if len(targets) > 0 else 0
         hit_sum += 1 if num_correct > 0 else 0
         
+        if target_scores is not None:
+            # Calculate Soft Recall
+            # Sum of scores of retrieved targets / Sum of all target scores
+            total_target_score = target_scores_cpu[i].sum()
+            
+            # Find scores of retrieved targets
+            retrieved_score = 0
+            # We need to map target index to its score. 
+            # Since target_indices and target_scores are aligned:
+            t_indices = target_indices_cpu[i]
+            t_scores = target_scores_cpu[i]
+            
+            # Create a lookup for this sample
+            target_score_map = {idx: score for idx, score in zip(t_indices, t_scores)}
+            
+            for pred_idx in preds:
+                if pred_idx in target_score_map:
+                    retrieved_score += target_score_map[pred_idx]
+            
+            soft_recall_sum += retrieved_score / total_target_score if total_target_score > 0 else 0
+
     return {
         "recall_sum": recall_sum,
+        "soft_recall_sum": soft_recall_sum,
         "hit_sum": hit_sum,
         "correct_count_sum": correct_count_sum,
         "num_samples": batch_size,
@@ -168,6 +195,7 @@ def main():
         # Epoch metric accumulators
         epoch_loss_sum = 0.0
         epoch_recall_sum = 0.0
+        epoch_soft_recall_sum = 0.0
         epoch_hit_sum = 0.0
         epoch_correct_count_sum = 0.0
         epoch_total_samples = 0
@@ -193,7 +221,11 @@ def main():
                 
                 # Accumulate metrics
                 # pred_indices: [batch, 1, k_pred] -> [batch, k_pred]
-                batch_metrics = calculate_metrics(pred_indices.squeeze(1), batch["target_indices"])
+                batch_metrics = calculate_metrics(
+                    pred_indices.squeeze(1), 
+                    batch["target_indices"],
+                    batch["target_scores"]
+                )
                 
                 # Sync metrics across devices for accurate logging if distributed
                 # For simplicity, we'll compute local metrics and average them if needed, 
@@ -202,6 +234,7 @@ def main():
                 
                 epoch_loss_sum += loss.item()
                 epoch_recall_sum += batch_metrics["recall_sum"]
+                epoch_soft_recall_sum += batch_metrics["soft_recall_sum"]
                 epoch_hit_sum += batch_metrics["hit_sum"]
                 epoch_correct_count_sum += batch_metrics["correct_count_sum"]
                 epoch_total_samples += batch_metrics["num_samples"]
@@ -214,23 +247,26 @@ def main():
                          # Calculate running averages
                          running_avg_loss = epoch_loss_sum / steps_in_epoch
                          running_avg_recall = epoch_recall_sum / epoch_total_samples if epoch_total_samples > 0 else 0
+                         running_avg_soft_recall = epoch_soft_recall_sum / epoch_total_samples if epoch_total_samples > 0 else 0
                          running_avg_hit_rate = epoch_hit_sum / epoch_total_samples if epoch_total_samples > 0 else 0
                          
                          swanlab.log({
                              "train/step_loss": loss.item(),
                              "train/running_avg_loss": running_avg_loss,
                              "train/running_avg_recall": running_avg_recall,
+                             "train/running_avg_soft_recall": running_avg_soft_recall,
                              "train/running_avg_hit_rate": running_avg_hit_rate,
                              "lr": scheduler.get_last_lr()[0]
                          }, step=global_step)
                          
-                         print(f"Step {global_step}: Loss {loss.item():.4f} | Avg Loss {running_avg_loss:.4f} | Avg Recall {running_avg_recall:.4f} | Avg HitRate {running_avg_hit_rate:.4f}")
+                         print(f"Step {global_step}: Loss {loss.item():.4f} | Avg Loss {running_avg_loss:.4f} | Avg Recall {running_avg_recall:.4f} | Avg SoftRecall {running_avg_soft_recall:.4f} | Avg HitRate {running_avg_hit_rate:.4f}")
                 
                 global_step += 1
         
         # Calculate and log epoch metrics
         avg_loss = epoch_loss_sum / len(dataloader) # Approximation since batch size varies, but close enough
         avg_recall = epoch_recall_sum / epoch_total_samples if epoch_total_samples > 0 else 0
+        avg_soft_recall = epoch_soft_recall_sum / epoch_total_samples if epoch_total_samples > 0 else 0
         avg_hit_rate = epoch_hit_sum / epoch_total_samples if epoch_total_samples > 0 else 0
         avg_correct = epoch_correct_count_sum / epoch_total_samples if epoch_total_samples > 0 else 0
         precision = epoch_correct_count_sum / epoch_total_candidates if epoch_total_candidates > 0 else 0
@@ -239,6 +275,7 @@ def main():
             print(f"Epoch {epoch} finished.")
             print(f"Avg Loss: {avg_loss:.4f}")
             print(f"Recall: {avg_recall:.4f}")
+            print(f"Soft Recall: {avg_soft_recall:.4f}")
             print(f"Hit Rate: {avg_hit_rate:.4f}")
             print(f"Avg Correct: {avg_correct:.4f}")
             print(f"Precision: {precision:.4f}")
@@ -246,6 +283,7 @@ def main():
             swanlab.log({
                 "train/epoch_loss": avg_loss,
                 "train/epoch_recall": avg_recall,
+                "train/epoch_soft_recall": avg_soft_recall,
                 "train/epoch_hit_rate": avg_hit_rate,
                 "train/epoch_avg_correct": avg_correct,
                 "train/epoch_precision": precision
