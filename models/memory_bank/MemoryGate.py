@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -25,6 +26,7 @@ class MemoryGate(nn.Module):
             - knowledge_dim: 记忆键的维度
             - num_candidates: 生成的候选记忆数量
             - dropout: Dropout概率
+            - keys_path: (Optional) Path to pre-computed keys file
     """
 
     def __init__(self, cfg: dict) -> None:
@@ -56,7 +58,20 @@ class MemoryGate(nn.Module):
 
         # Product Key Memory: 两个独立的键集合
         # 形状: [2, √knowledge_num, knowledge_dim // 2]
-        self.keys = nn.Parameter(torch.randn(2, self.num_keys, self.knowledge_dim // 2))
+        if "keys_path" in cfg and cfg["keys_path"] and os.path.exists(cfg["keys_path"]):
+            print(f"Loading frozen keys from {cfg['keys_path']}...")
+            loaded_keys = torch.load(cfg["keys_path"])
+            # Ensure shape matches
+            expected_shape = (2, self.num_keys, self.knowledge_dim // 2)
+            assert loaded_keys.shape == expected_shape, \
+                f"Keys shape mismatch. Expected {expected_shape}, got {loaded_keys.shape}"
+            
+            self.keys = nn.Parameter(loaded_keys)
+            self.keys.requires_grad = False # Freeze keys
+            print("Keys loaded and FROZEN.")
+        else:
+            print("Initializing random keys (Training from scratch)...")
+            self.keys = nn.Parameter(torch.randn(2, self.num_keys, self.knowledge_dim // 2))
 
         # 学习温度系数 (Logit Scale)，初始化为 1/0.07 ≈ 14.3
         self.logit_scale = nn.Parameter(torch.ones([]) * torch.log(torch.tensor(1 / 0.07)))

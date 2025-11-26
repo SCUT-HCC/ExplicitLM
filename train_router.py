@@ -142,12 +142,28 @@ def main():
     if accelerator.is_main_process:
         swanlab.init(project=args.swanlab_project, config=vars(args))
     
+    # Load Metadata from prepare_data.py
+    meta_path = os.path.join(os.path.dirname(args.data_path), "meta.json")
+    if os.path.exists(meta_path):
+        print(f"Loading metadata from {meta_path}...")
+        with open(meta_path, 'r') as f:
+            meta = json.load(f)
+            knowledge_num = meta.get("knowledge_num", args.knowledge_num)
+            knowledge_dim = meta.get("embedding_dim", args.knowledge_dim)
+            keys_path = meta.get("keys_path", None)
+            print(f"Using knowledge_num={knowledge_num}, knowledge_dim={knowledge_dim}, keys_path={keys_path}")
+    else:
+        print("Warning: meta.json not found. Using arguments.")
+        knowledge_num = args.knowledge_num
+        knowledge_dim = args.knowledge_dim
+        keys_path = None
+
     # Calculate perfect square for knowledge_num
     # MemoryGate requires knowledge_num to be a perfect square
-    sqrt_num = math.ceil(math.sqrt(args.knowledge_num))
+    sqrt_num = math.ceil(math.sqrt(knowledge_num))
     padded_knowledge_num = sqrt_num ** 2
-    if padded_knowledge_num != args.knowledge_num:
-        accelerator.print(f"Padding knowledge_num from {args.knowledge_num} to {padded_knowledge_num} (square of {sqrt_num})")
+    if padded_knowledge_num != knowledge_num:
+        accelerator.print(f"Padding knowledge_num from {knowledge_num} to {padded_knowledge_num} (square of {sqrt_num})")
     
     # Load Tokenizer
     from transformers import AutoTokenizer
@@ -166,9 +182,10 @@ def main():
     memory_gate_cfg = {
         "dim": hidden_size,
         "knowledge_num": padded_knowledge_num,
-        "knowledge_dim": args.knowledge_dim,
+        "knowledge_dim": knowledge_dim,
         "num_candidates": args.num_candidates,
-        "dropout": 0.1
+        "dropout": 0.1,
+        "keys_path": keys_path
     }
     
     model = QwenMemoryRouter(args.model_name, memory_gate_cfg, freeze_backbone=True)
