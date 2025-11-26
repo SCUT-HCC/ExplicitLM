@@ -53,8 +53,12 @@ class MemoryGate(nn.Module):
         self.num_keys = int(self.knowledge_num ** 0.5)
 
         # 查询投影层：将输入维度映射到knowledge_dim
-        # 输出会被分割为两部分，分别用于两个Product Key
-        self.gate_proj = nn.Linear(self.dim, self.knowledge_dim, bias=False)
+        # 升级为MLP: Linear -> GELU -> Linear
+        self.gate_proj = nn.Sequential(
+            nn.Linear(self.dim, self.dim, bias=False),
+            nn.GELU(),
+            nn.Linear(self.dim, self.knowledge_dim, bias=False)
+        )
 
         # Product Key Memory: 两个独立的键集合
         # 形状: [2, √knowledge_num, knowledge_dim // 2]
