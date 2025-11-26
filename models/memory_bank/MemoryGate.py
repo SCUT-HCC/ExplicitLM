@@ -101,8 +101,10 @@ class MemoryGate(nn.Module):
         q1 = F.normalize(q1, p=2, dim=-1)
         q2 = F.normalize(q2, p=2, dim=-1)
         
-        k1 = F.normalize(self.keys[0], p=2, dim=-1)
-        k2 = F.normalize(self.keys[1], p=2, dim=-1)
+        # Ensure keys are in the same dtype as input (handle fp16/bf16 mismatch)
+        keys = self.keys.to(dtype=x.dtype)
+        k1 = F.normalize(keys[0], p=2, dim=-1)
+        k2 = F.normalize(keys[1], p=2, dim=-1)
 
         # Clamp logit scale to prevent instability
         logit_scale = self.logit_scale.exp().clamp(max=100.0)
