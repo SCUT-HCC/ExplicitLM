@@ -6,6 +6,25 @@ import torch.nn.functional as F
 from models.configs import LMConfig
 
 
+class ResidualBlock(nn.Module):
+    """
+    Transformer-style Residual Block (Pre-Norm FFN)
+    Structure: x + Linear(GELU(Linear(LayerNorm(x))))
+    """
+    def __init__(self, dim: int, expansion_factor: int = 2, dropout: float = 0.1):
+        super().__init__()
+        self.norm = nn.LayerNorm(dim)
+        self.ffn = nn.Sequential(
+            nn.Linear(dim, dim * expansion_factor),
+            nn.GELU(),
+            nn.Linear(dim * expansion_factor, dim),
+            nn.Dropout(dropout)
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x + self.ffn(self.norm(x))
+
+
 class MemoryGate(nn.Module):
     """
     基于Product Key Memory的记忆选择门控机制
@@ -52,14 +71,16 @@ class MemoryGate(nn.Module):
 
         self.num_keys = int(self.knowledge_num ** 0.5)
 
-        # 查询投影层：将输入维度映射到knowledge_dim
-        # 升级为MLP: Linear -> LayerNorm -> GELU -> Linear
-        # 扩宽中间层维度为 2 * dim
+        # 查询投影层：升级为 ResNet 结构
+        # 1. Input Projection: Align features
+        # 2. ResNet Stack: Deep feature extraction
+        # 3. Output Projection: Map to knowledge space
         self.gate_proj = nn.Sequential(
-            nn.Linear(self.dim, self.dim * 2, bias=False),
-            nn.LayerNorm(self.dim * 2),
-            nn.GELU(),
-            nn.Linear(self.dim * 2, self.knowledge_dim, bias=False)
+            nn.Linear(self.dim, self.dim, bias=False), # Input Projection
+            ResidualBlock(self.dim, expansion_factor=2, dropout=cfg["dropout"]), # ResBlock 1
+            ResidualBlock(self.dim, expansion_factor=2, dropout=cfg["dropout"]), # ResBlock 2
+            nn.LayerNorm(self.dim), # Final Norm before output projection
+            nn.Linear(self.dim, self.knowledge_dim, bias=False) # Output Projection
         )
 
         # Product Key Memory: 两个独立的键集合
