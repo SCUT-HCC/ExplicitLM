@@ -31,21 +31,28 @@ class QwenMemoryRouter(nn.Module):
         
         bsz, seq_len, dim = last_hidden_state.shape
         
-        # Select last token representation
+        # Mean Pooling
         if attention_mask is not None:
-            # Find the index of the last non-padding token
-            last_token_indices = attention_mask.sum(dim=1) - 1
-            # Clamp to ensure no negative indices (though shouldn't happen with valid mask)
-            last_token_indices = last_token_indices.clamp(min=0)
-            last_token_state = last_hidden_state[torch.arange(bsz, device=last_hidden_state.device), last_token_indices]
+            # Expand mask to [batch, seq, dim]
+            input_mask_expanded = attention_mask.unsqueeze(-1).expand(last_hidden_state.size()).float()
+            
+            # Sum embeddings
+            sum_embeddings = torch.sum(last_hidden_state * input_mask_expanded, 1)
+            
+            # Sum mask (clamp to avoid div by zero)
+            sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+            
+            # Average
+            mean_embeddings = sum_embeddings / sum_mask # [batch, dim]
         else:
-            last_token_state = last_hidden_state[:, -1, :]
+            # Fallback if no mask provided (shouldn't happen in training)
+            mean_embeddings = last_hidden_state.mean(dim=1)
             
         # Reshape to [batch, 1, dim] for MemoryGate
-        last_token_state = last_token_state.unsqueeze(1)
+        query_embeddings = mean_embeddings.unsqueeze(1)
         
         # Compute scores once
-        scores_1, scores_2 = self.head.compute_sub_scores(last_token_state)
+        scores_1, scores_2 = self.head.compute_sub_scores(query_embeddings)
         
         if target_indices is not None:
             # Training mode
