@@ -53,9 +53,10 @@ class MemoryGate(nn.Module):
         self.num_keys = int(self.knowledge_num ** 0.5)
 
         # 查询投影层：将输入维度映射到knowledge_dim
-        # 升级为MLP: Linear -> GELU -> Linear
+        # 升级为MLP: Linear -> LayerNorm -> GELU -> Linear
         self.gate_proj = nn.Sequential(
             nn.Linear(self.dim, self.dim, bias=False),
+            nn.LayerNorm(self.dim),
             nn.GELU(),
             nn.Linear(self.dim, self.knowledge_dim, bias=False)
         )
