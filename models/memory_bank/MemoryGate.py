@@ -54,11 +54,12 @@ class MemoryGate(nn.Module):
 
         # 查询投影层：将输入维度映射到knowledge_dim
         # 升级为MLP: Linear -> LayerNorm -> GELU -> Linear
+        # 扩宽中间层维度为 2 * dim
         self.gate_proj = nn.Sequential(
-            nn.Linear(self.dim, self.dim, bias=False),
-            nn.LayerNorm(self.dim),
+            nn.Linear(self.dim, self.dim * 2, bias=False),
+            nn.LayerNorm(self.dim * 2),
             nn.GELU(),
-            nn.Linear(self.dim, self.knowledge_dim, bias=False)
+            nn.Linear(self.dim * 2, self.knowledge_dim, bias=False)
         )
 
         # Product Key Memory: 两个独立的键集合
