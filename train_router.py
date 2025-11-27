@@ -133,7 +133,7 @@ def main():
     parser.add_argument("--knowledge_dim", type=int, default=2048)
     parser.add_argument("--num_candidates", type=int, default=32)
     parser.add_argument("--max_length", type=int, default=128)
-    parser.add_argument("--temperature", type=float, default=0.1, help="Temperature for soft label loss")
+    parser.add_argument("--temperature", type=float, default=0.5, help="Temperature for soft label loss")
     parser.add_argument("--swanlab_project", type=str, default="dnn-cosine-sim")
     
     args = parser.parse_args()
