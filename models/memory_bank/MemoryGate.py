@@ -125,8 +125,9 @@ class MemoryGate(nn.Module):
         q2 = queries[:, :, self.knowledge_dim // 2 :]  # 后半部分
 
         # Normalize queries and keys (Cosine Similarity)
-        q1 = F.normalize(q1, p=2, dim=-1)
-        q2 = F.normalize(q2, p=2, dim=-1)
+        # Dynamic Confidence: Do NOT normalize queries. Let magnitude represent confidence.
+        # q1 = F.normalize(q1, p=2, dim=-1)
+        # q2 = F.normalize(q2, p=2, dim=-1)
         
         # Ensure keys are in the same dtype as input (handle fp16/bf16 mismatch)
         keys = self.keys.to(dtype=x.dtype)
