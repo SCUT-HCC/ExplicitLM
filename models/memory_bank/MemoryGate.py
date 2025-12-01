@@ -44,6 +44,7 @@ class MemoryGate(nn.Module):
             - knowledge_num: 记忆库大小（必须是完全平方数）
             - knowledge_dim: 记忆键的维度
             - num_candidates: 生成的候选记忆数量
+            - num_candidates_internal: 内部检索数量 (Default: 128)
             - dropout: Dropout概率
             - keys_path: (Optional) Path to pre-computed keys file
     """
@@ -62,7 +63,8 @@ class MemoryGate(nn.Module):
         self.knowledge_dim = cfg["knowledge_dim"]
 
         # 候选记忆配置
-        self.num_candidates = cfg.get("num_candidates", 32)  # 生成的候选数量
+        self.num_candidates = cfg.get("num_candidates", 32)  # 最终输出的候选数量
+        self.num_candidates_internal = cfg.get("num_candidates_internal", 128) # 内部检索数量 (扩大搜索空间)
         self.num_selected = cfg.get("num_selected", 1)  # 后续选择的最终数量
 
         # 验证知识库数量必须是完全平方数（Product Key Memory的要求）
@@ -125,9 +127,9 @@ class MemoryGate(nn.Module):
         q2 = queries[:, :, self.knowledge_dim // 2 :]  # 后半部分
 
         # Normalize queries and keys (Cosine Similarity)
-        # Dynamic Confidence: Do NOT normalize queries. Let magnitude represent confidence.
-        # q1 = F.normalize(q1, p=2, dim=-1)
-        # q2 = F.normalize(q2, p=2, dim=-1)
+        # Reverted to Cosine Similarity as requested
+        q1 = F.normalize(q1, p=2, dim=-1)
+        q2 = F.normalize(q2, p=2, dim=-1)
         
         # Ensure keys are in the same dtype as input (handle fp16/bf16 mismatch)
         keys = self.keys.to(dtype=x.dtype)
@@ -159,12 +161,13 @@ class MemoryGate(nn.Module):
         bsz, seq_len, _ = scores_1.shape
 
         # 步骤4: 对每个键集合选择top-k候选
-        topk_scores_1, topk_indices_1 = scores_1.topk(self.num_candidates, dim=-1)
-        topk_scores_2, topk_indices_2 = scores_2.topk(self.num_candidates, dim=-1)
+        # 使用 num_candidates_internal (128) 进行内部检索，扩大搜索空间
+        topk_scores_1, topk_indices_1 = scores_1.topk(self.num_candidates_internal, dim=-1)
+        topk_scores_2, topk_indices_2 = scores_2.topk(self.num_candidates_internal, dim=-1)
 
         # 步骤5: 通过笛卡尔积组合两组候选
-        # 分数相加：[batch, seq, num_candidates, 1] + [batch, seq, 1, num_candidates]
-        #         → [batch, seq, num_candidates, num_candidates]
+        # 分数相加：[batch, seq, K_int, 1] + [batch, seq, 1, K_int]
+        #         → [batch, seq, K_int, K_int]
         combined_scores = topk_scores_1.unsqueeze(-1) + topk_scores_2.unsqueeze(-2)
 
         # 索引组合：index1 * num_keys + index2
@@ -174,11 +177,11 @@ class MemoryGate(nn.Module):
         )
 
         # 步骤6: 展平并选择最终的top-k候选
-        # 展平笛卡尔积结果: [batch, seq, num_candidates * num_candidates]
+        # 展平笛卡尔积结果: [batch, seq, K_int * K_int]
         combined_scores = combined_scores.view(bsz, seq_len, -1)
         combined_indices = combined_indices.view(bsz, seq_len, -1)
 
-        # 选择分数最高的num_candidates个候选
+        # 选择分数最高的num_candidates (32) 个候选作为最终输出
         candidate_scores, candidate_pk_indices = combined_scores.topk(
             self.num_candidates, dim=-1
         )
