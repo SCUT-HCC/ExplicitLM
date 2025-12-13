@@ -18,6 +18,29 @@ from torch.utils.data import Dataset, DataLoader
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 
 
+def _format_text_for_qwen_tokenizer(tokenizer: Any, text: str) -> str:
+    """
+    根据Qwen tokenizer的特殊token格式化文本。
+    Qwen通常使用 <|im_start|>user\n{text}<|im_end|> 格式。
+    """
+    im_start_token = "<|im_start|>"
+    im_end_token = "<|im_end|>"
+
+    # 检查tokenizer是否包含这些特殊token
+    if im_start_token in tokenizer.get_added_tokens_decoder().values() and \
+       im_end_token in tokenizer.get_added_tokens_decoder().values():
+        # 使用Qwen的对话格式
+        formatted_text = f"{im_start_token}user\n{text}{im_end_token}"
+    else:
+        # 回退到标准的bos_token/eos_token（如果存在）
+        if tokenizer.bos_token is not None and not text.startswith(tokenizer.bos_token):
+            text = f"{tokenizer.bos_token}{text}"
+        if tokenizer.eos_token is not None and not text.endswith(tokenizer.eos_token):
+            text = f"{text}{tokenizer.eos_token}"
+        formatted_text = text
+    return formatted_text
+
+
 class PretrainDataset(Dataset):
     """
     预训练数据集类
@@ -94,11 +117,8 @@ class PretrainDataset(Dataset):
         sample = self.samples[index]
         text = str(sample['text'])
 
-        # 添加特殊token：<|im_start|>text<|im_end|>
-        if not text.startswith(self.tokenizer.bos_token):
-            text = f"{self.tokenizer.bos_token}{text}"
-        if not text.endswith(self.tokenizer.eos_token):
-            text = f"{text}{self.tokenizer.eos_token}"
+        # 使用Qwen tokenizer的特殊格式（如果适用）
+        text = _format_text_for_qwen_tokenizer(self.tokenizer, text)
 
         # Tokenization with padding and truncation
         encoding = self.tokenizer(
@@ -319,11 +339,8 @@ class ValidationDataset(Dataset):
         sample = self.samples[index]
         text = str(sample['text'])
 
-        # 添加特殊token：<|im_start|>text<|im_end|>
-        if not text.startswith(self.tokenizer.bos_token):
-            text = f"{self.tokenizer.bos_token}{text}"
-        if not text.endswith(self.tokenizer.eos_token):
-            text = f"{text}{self.tokenizer.eos_token}"
+        # 使用Qwen tokenizer的特殊格式（如果适用）
+        text = _format_text_for_qwen_tokenizer(self.tokenizer, text)
 
         # Tokenization with padding and truncation
         encoding = self.tokenizer(

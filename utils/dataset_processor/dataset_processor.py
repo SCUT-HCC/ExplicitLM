@@ -383,7 +383,7 @@ class DatasetProcessor:
         ]
 
         if missing_files:
-            print("❌ 缺少必需文件:")
+            print("错误: 缺少必需文件:")
             for missing in missing_files:
                 print(f"   - {missing}")
             return
@@ -392,7 +392,7 @@ class DatasetProcessor:
         for data_type in self.data_types:
             self._process_single_data_type(data_type)
 
-        print("✅ 所有数据集处理完成")
+        print("所有数据集处理完成")
 
 
 def main() -> None:

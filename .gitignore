@@ -1,68 +1,51 @@
-# ========== 原有规则 ==========
-**/__pycache__
-*.pyc
-*.pyo
-__pycache__/
-.serena/
-.python-version
-uv.lock
+# Training outputs
+out/
+outputs/
+logs/
+experiments/
 
-# ========== DVC管理的大文件（实际文件被DVC追踪）==========
-# 数据文件（保留.dvc元文件）
-/data/raw/*
-!/data/raw/.gitkeep
-/data/processed/*
-!/data/processed/.gitkeep
-/data/knowledge_base/*
-!/data/knowledge_base/.gitkeep
-!/data/knowledge_base/*.dvc
-/data/database/*
-!/data/database/.gitkeep
-!/data/database/*.dvc
-/data/benchmarks/*
-!/data/benchmarks/.gitkeep
-!/data/benchmarks/*.dvc
+# Model checkpoints
+*.pth
+*.pt
+*.ckpt
+*.bin
+*.safetensors
+checkpoints/
 
-# 模型权重（保留.dvc元文件）
-/checkpoints/*
-!/checkpoints/.gitkeep
-!/checkpoints/*.dvc
+# Data cache
+data/cache/
+data/database/*.jsonl
+data/database/*.json
+!data/database/.gitkeep
 
-# ========== DVC内部文件 ==========
-/.dvc/tmp
-/.dvc/cache
-/.dvc/config.local
+# Large data files (should use DVC instead)
+sft_data/*.json
+sft_data/*.jsonl
+!sft_data/.gitkeep
 
-# ========== 实验运行产物（不追踪）==========
-/logs/*
-!/logs/.gitkeep
-/experiments/results/*
-!/experiments/results/.gitkeep
+# Tokenizer files (large binary files)
+models/*/tokenizer.json
+models/*/merges.txt
+models/*/vocab.json
+models/*/tokenizer_config.json
+models/*tokenizer*/
 
-# SwanLab日志（保留目录结构，追踪.dvc文件）
+# Logs
+*.log
+
+# SwanLab
 swanlog/
-wandb/
-/outputs/*
-!/outputs/.gitkeep
-!/outputs/*.dvc
-!/outputs/*/
-/outputs/*/*/
-!/outputs/*/*/
+swanlab/
 
-# 临时文件
-.swanlab_url
-.experiment_meta
+# Hydra
+.hydra/
 
-# ========== IDE和系统文件 ==========
-.vscode/
-.idea/
-.DS_Store
-*.swp
-*.swo
+# Temporary
+*.tmp
+*.temp
+.cache/
 
-# ========== 不提交的配置（可选）==========
-# 如果包含敏感信息，取消下面注释
-# .env
-# secrets.yaml
-**/CLAUDE.md
-/cache
+# Environment variables
+.env
+.env.local
+.env.*.local

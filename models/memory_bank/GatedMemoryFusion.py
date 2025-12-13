@@ -1,39 +1,19 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-from models.configs import LMConfig
+from typing import Optional
 
 
 class GatedMemoryFusion(nn.Module):
     """
-    门控记忆融合模块
-
-    使用类似SwiGLU的门控MLP结构，将自注意力输出与选中的记忆进行融合。
-    通过门控机制动态调节记忆信息的贡献，实现自适应的信息融合。
-
-    核心思想：
-    - 将自注意力输出和选中记忆拼接作为输入
-    - 使用门控投影(gate_proj)生成门控信号
-    - 使用上投影(up_proj)生成内容信号
-    - 通过element-wise乘法实现门控融合
-    - 使用下投影(down_proj)映射回原始维度
-
-    门控机制类似SwiGLU：
-        output = down_proj(silu(gate_proj(x)) * up_proj(x))
-
-    Args:
-        cfg: 模型配置字典，需包含以下字段：
-            - dim: 隐藏层维度
-            - knowledge_dim: 记忆键的维度
-            - num_selected: 选中的记忆数量（默认为1）
-            - dropout: Dropout概率
+    门控记忆融合模块（带Shortcut机制）
+    
+    使用SwiGLU门控MLP融合记忆，通过相似度动态控制memory贡献。
+    公式：out = hidden_states + alpha * memory_output
     """
 
     def __init__(self, cfg: dict) -> None:
         """
-        初始化门控记忆融合模块
-
         Args:
             cfg: 模型配置字典
         """
@@ -41,67 +21,56 @@ class GatedMemoryFusion(nn.Module):
         self.cfg = cfg
         self.dim = cfg["dim"]
         self.knowledge_dim = cfg["knowledge_dim"]
-        self.num_selected = cfg.get("num_selected", 1)  # 选择的最佳记忆数量
+        self.num_selected = cfg.get("num_selected", 1)
 
-        # 计算拼接后的输入维度
-        # 输入由两部分组成：
-        # 1. h_attn: [batch, seq, dim]
-        # 2. selected_memory: [batch, seq, num_selected * dim]
         concat_dim = self.dim + self.num_selected * self.dim
 
-        # 门控MLP结构（类似SwiGLU）
-        self.gate_proj = nn.Linear(concat_dim, self.dim, bias=False)  # 门控投影
-        self.up_proj = nn.Linear(concat_dim, self.dim, bias=False)    # 上投影
-        self.down_proj = nn.Linear(self.dim, self.dim, bias=False)    # 下投影
+        self.gate_proj = nn.Linear(concat_dim, self.dim, bias=False)
+        self.up_proj = nn.Linear(concat_dim, self.dim, bias=False)
+        self.down_proj = nn.Linear(self.dim, self.dim, bias=False)
 
-        # Dropout层用于正则化
+        self.similarity_gate = nn.Sequential(
+            nn.Linear(1, self.dim // 4, bias=False),
+            nn.SiLU(),
+            nn.Linear(self.dim // 4, 1, bias=False),
+            nn.Sigmoid()
+        )
+        
+        self.memory_weight_bias = nn.Parameter(torch.zeros(1))
         self.dropout = nn.Dropout(cfg["dropout"])
 
     def forward(
-        self,
+        self,   
         h_attn: torch.Tensor,
-        selected_memory: torch.Tensor
+        selected_memory: torch.Tensor,
+        similarity_scores: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """
-        前向传播：融合自注意力输出和选中的记忆
-
-        处理流程：
-        1. 拼接自注意力输出和选中记忆
-        2. 通过门控投影和激活函数生成门控信号
-        3. 通过上投影生成内容信号
-        4. 门控信号与内容信号逐元素相乘
-        5. 通过下投影映射回原始维度
-        6. 应用dropout正则化
-
         Args:
-            h_attn: 自注意力输出，形状为 [batch_size, seq_len, dim]
-            selected_memory: 选中的记忆，形状为 [batch_size, seq_len, dim]
-                           （当num_selected=1时，表示单个最佳记忆）
-
+            h_attn: 自注意力输出 [batch_size, seq_len, dim]
+            selected_memory: 选中的记忆 [batch_size, seq_len, dim]
+            similarity_scores: 相似度分数 [batch_size, seq_len]（可选）
         Returns:
-            融合后的输出，形状为 [batch_size, seq_len, dim]
-
-        Note:
-            门控机制公式：output = dropout(down_proj(silu(gate_proj(x)) * up_proj(x)))
+            memory_output: 记忆融合输出 [batch_size, seq_len, dim]
         """
         bsz, seq_len, _ = h_attn.shape
 
-        # 步骤1: 拼接自注意力输出和选中记忆
-        # [batch, seq, dim] + [batch, seq, dim] → [batch, seq, 2*dim]
         concat_input = torch.cat([h_attn, selected_memory], dim=-1)
+        gate = F.silu(self.gate_proj(concat_input))
+        up = self.up_proj(concat_input)
+        fusion_output = gate * up
+        memory_output = self.dropout(self.down_proj(fusion_output))
 
-        # 步骤2-4: 门控MLP处理（类似SwiGLU）
-        # 门控分支：通过SiLU激活函数生成门控信号
-        gate = F.silu(self.gate_proj(concat_input))  # [batch, seq_len, dim]
+        if similarity_scores is not None:
+            avg_similarity = similarity_scores.mean(dim=-1, keepdim=True)
+        else:
+            avg_similarity = torch.full(
+                (bsz, 1), 0.5, device=h_attn.device, dtype=h_attn.dtype
+            )
+        
+        alpha = self.similarity_gate(avg_similarity) + self.memory_weight_bias
+        alpha = torch.clamp(alpha, 0.0, 1.0)
+        alpha_expanded = alpha.unsqueeze(1).expand(-1, seq_len, -1)
+        weighted_memory_output = alpha_expanded * memory_output
 
-        # 内容分支：生成待门控的内容
-        up = self.up_proj(concat_input)  # [batch, seq_len, dim]
-
-        # 门控融合：逐元素相乘
-        fusion_output = gate * up  # [batch, seq_len, dim]
-
-        # 步骤5-6: 输出投影和正则化
-        output = self.down_proj(fusion_output)  # [batch, seq_len, dim]
-        output = self.dropout(output)
-
-        return output
+        return weighted_memory_output
