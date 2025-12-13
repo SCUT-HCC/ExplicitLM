@@ -49,3 +49,7 @@ swanlab/
 .env
 .env.local
 .env.*.local
+
+# data process
+train_data_with_extract.json
+llmlingua2/
