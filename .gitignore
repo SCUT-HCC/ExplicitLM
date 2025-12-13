@@ -66,3 +66,9 @@ wandb/
 # secrets.yaml
 **/CLAUDE.md
 /cache
+
+# ========== train router（可选）==========
+experiments/dnn_cosine_sim/checkpoints
+experiments/dnn_cosine_sim/train_with_labels.jsonl
+experiments/dnn_cosine_sim/keys.pt
+experiments/dnn_cosine_sim/meta.json

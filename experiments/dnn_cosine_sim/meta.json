@@ -1,1 +1,1 @@
-{"knowledge_num": 1048576}
+{"knowledge_num": 1048576, "embedding_dim": 1536, "keys_path": "experiments/dnn_cosine_sim/keys.pt"}

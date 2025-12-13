@@ -124,7 +124,7 @@ def calculate_metrics(pred_indices, target_indices, target_scores=None):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_path", type=str, default="experiments/dnn_cosine_sim/train_with_labels.jsonl")
-    parser.add_argument("--model_name", type=str, default="/home/pci/ycz/Code/ExplicitLM/Qwen")
+    parser.add_argument("--model_name", type=str, default="/home/pci/ycz/Code/lm/Qwen3-4B")
     parser.add_argument("--output_dir", type=str, default="experiments/dnn_cosine_sim/checkpoints")
     parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--lr", type=float, default=1e-4)
@@ -310,8 +310,15 @@ def main():
         if accelerator.is_main_process:
             save_path = os.path.join(args.output_dir, f"epoch_{epoch}")
             os.makedirs(save_path, exist_ok=True)
-            accelerator.save_state(save_path)
-            print(f"Saved checkpoint to {save_path}")
+
+            # ⚠️ 关键：从模型中取出“非backbone的参数”
+            router_state = {
+                "head": accelerator.unwrap_model(model).head.state_dict(),
+                "memory_gate_cfg": memory_gate_cfg
+            }
+
+            torch.save(router_state, os.path.join(save_path, "router_only.pt"))
+            print(f"Saved Router-only checkpoint to {save_path}")
 
     accelerator.end_training()
     if accelerator.is_main_process:
