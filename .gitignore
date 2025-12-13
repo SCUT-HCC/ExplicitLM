@@ -38,6 +38,8 @@ uv.lock
 !/logs/.gitkeep
 /experiments/results/*
 !/experiments/results/.gitkeep
+llmlingua2/
+train_data_with_extract.json
 
 # SwanLab日志（保留目录结构，追踪.dvc文件）
 swanlog/
